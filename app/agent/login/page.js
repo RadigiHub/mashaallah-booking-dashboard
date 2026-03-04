@@ -8,7 +8,7 @@ export default function AgentLogin() {
 
   function handleSubmit(e) {
     e.preventDefault();
-    alert("Login connected nahi hai abhi. Next step me authentication add karenge.");
+    window.location.href = "/agent/dashboard";
   }
 
   return (
