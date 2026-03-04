@@ -73,7 +73,7 @@ export default function AgentLogin() {
         </form>
 
         <div style={styles.note}>
-          This login is UI-only right now. Next we will connect real authentication + protected dashboard routes.
+          Authorized agents only. If you need access credentials, please contact the administrator.
         </div>
       </section>
     </main>
