@@ -1,12 +1,14 @@
+import "./globals.css";
+
 export const metadata = {
-  title: "MashaAllah Trips | Booking Dashboard",
-  description: "Agent dashboard and booking tracking portal"
+  title: "MashaAllah Trips | Agent Dashboard",
+  description: "Agent dashboard for creating Umrah packages and booking tracking."
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: "system-ui" }}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
