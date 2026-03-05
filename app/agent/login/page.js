@@ -1,195 +1,116 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/app/lib/supabaseClient";
 
-export default function AgentLogin() {
+export default function AgentLoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  function handleSubmit(e) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const onSubmit = async (e) => {
     e.preventDefault();
-    window.location.href = "/agent/dashboard";
-  }
+    setError("");
+    setLoading(true);
+
+    try {
+      // 1) Supabase Auth Sign In
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) throw signInError;
+
+      const userEmail = data?.user?.email;
+      if (!userEmail) throw new Error("Login failed. Please try again.");
+
+      // 2) Check agent exists in agents table (professional access control)
+      const { data: agentRow, error: agentError } = await supabase
+        .from("agents")
+        .select("id, role, status")
+        .eq("email", userEmail)
+        .single();
+
+      if (agentError) throw new Error("Access not found. Please contact admin.");
+      if (agentRow?.status && agentRow.status !== "active") {
+        throw new Error("Your access is not active. Please contact admin.");
+      }
+
+      // 3) Go to dashboard
+      router.push("/agent/dashboard");
+    } catch (err) {
+      setError(err?.message || "Login failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <main style={styles.bg}>
-      <div style={styles.overlay} />
-
-      <section style={styles.card}>
-        <div style={styles.brandRow}>
-          <div style={styles.logo} aria-hidden="true">
-            M
-          </div>
-          <div>
-            <div style={styles.brandName}>MashaAllah Trips</div>
-            <div style={styles.brandSub}>Agent Login</div>
-          </div>
+    <div className="min-h-screen w-full flex items-center justify-center">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-black/40 backdrop-blur p-6 shadow-2xl">
+        <div className="mb-5">
+          <div className="text-white/90 font-semibold text-lg">MashaAllah Trips</div>
+          <div className="text-white/60 text-sm">Agent Login</div>
         </div>
 
-        <h1 style={styles.title}>Sign in</h1>
-        <p style={styles.text}>
+        <h1 className="text-3xl font-bold text-white mb-2">Sign in</h1>
+        <p className="text-white/60 mb-6 text-sm">
           Use your agent credentials to access the internal dashboard.
         </p>
 
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <label style={styles.label}>
-            Email
+        {error ? (
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-200 text-sm">
+            {error}
+          </div>
+        ) : null}
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label className="text-white/70 text-sm">Email</label>
             <input
-              style={styles.input}
+              type="email"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              placeholder="agent@mashaallahtrips.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              type="email"
-              placeholder="agent@mashaallahtrips.com"
               autoComplete="email"
               required
             />
-          </label>
+          </div>
 
-          <label style={styles.label}>
-            Password
+          <div>
+            <label className="text-white/70 text-sm">Password</label>
             <input
-              style={styles.input}
+              type="password"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              placeholder="••••••••"
               autoComplete="current-password"
               required
             />
-          </label>
+          </div>
 
-          <button type="submit" style={styles.primaryBtn}>
-            Sign in
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl py-3 font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-95 disabled:opacity-60"
+          >
+            {loading ? "Signing in..." : "Sign in"}
           </button>
 
-          <div style={styles.helperRow}>
-            <a href="/" style={styles.link}>
-              ← Back to Home
-            </a>
-            <a href="mailto:admin@mashaallahtrips.com" style={styles.linkMuted}>
-              Forgot access?
-            </a>
+          <div className="flex justify-between text-xs text-white/50 pt-2">
+            <a href="/" className="hover:text-white/70">← Back to Home</a>
+            <span>Need access? Contact admin</span>
           </div>
         </form>
-
-        <div style={styles.note}>
-          Authorized agents only. If you need access credentials, please contact the administrator.
-        </div>
-      </section>
-    </main>
+      </div>
+    </div>
   );
 }
-
-const styles = {
-  bg: {
-    minHeight: "100vh",
-    display: "grid",
-    placeItems: "center",
-    padding: "28px 16px",
-    background:
-      "radial-gradient(900px 450px at 20% 15%, rgba(164, 97, 255, 0.35), transparent 55%), radial-gradient(900px 450px at 85% 25%, rgba(255, 85, 170, 0.22), transparent 55%), radial-gradient(900px 450px at 40% 90%, rgba(0, 255, 210, 0.10), transparent 55%), #07060b",
-    position: "relative",
-    overflow: "hidden",
-  },
-  overlay: {
-    position: "absolute",
-    inset: 0,
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.00) 40%, rgba(0,0,0,0.25) 100%)",
-    pointerEvents: "none",
-  },
-  card: {
-    width: "min(520px, 92vw)",
-    borderRadius: "18px",
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(16, 14, 24, 0.72)",
-    backdropFilter: "blur(14px)",
-    boxShadow: "0 20px 70px rgba(0,0,0,0.55)",
-    padding: "22px 22px 18px",
-    position: "relative",
-    zIndex: 1,
-  },
-  brandRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "14px",
-  },
-  logo: {
-    width: "44px",
-    height: "44px",
-    borderRadius: "12px",
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 800,
-    color: "white",
-    background:
-      "linear-gradient(135deg, rgba(164,97,255,0.85), rgba(255,85,170,0.75))",
-    boxShadow: "0 10px 30px rgba(164,97,255,0.22)",
-    letterSpacing: "0.5px",
-  },
-  brandName: {
-    color: "rgba(255,255,255,0.95)",
-    fontWeight: 700,
-    lineHeight: 1.1,
-  },
-  brandSub: {
-    color: "rgba(255,255,255,0.55)",
-    fontSize: "13px",
-    marginTop: "2px",
-  },
-  title: {
-    margin: "10px 0 8px",
-    fontSize: "28px",
-    fontWeight: 800,
-    color: "rgba(255,255,255,0.95)",
-    letterSpacing: "-0.3px",
-  },
-  text: {
-    margin: 0,
-    color: "rgba(255,255,255,0.70)",
-    lineHeight: 1.55,
-    fontSize: "15px",
-  },
-  form: { marginTop: "14px", display: "grid", gap: "12px" },
-  label: {
-    display: "grid",
-    gap: "6px",
-    color: "rgba(255,255,255,0.70)",
-    fontSize: "13px",
-  },
-  input: {
-    height: "44px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(0,0,0,0.35)",
-    color: "rgba(255,255,255,0.92)",
-    padding: "0 12px",
-    outline: "none",
-  },
-  primaryBtn: {
-    height: "44px",
-    borderRadius: "12px",
-    border: "none",
-    cursor: "pointer",
-    color: "white",
-    fontWeight: 800,
-    background:
-      "linear-gradient(135deg, rgba(164,97,255,0.95), rgba(255,85,170,0.90))",
-    boxShadow: "0 14px 40px rgba(164,97,255,0.18)",
-  },
-  helperRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: "2px",
-  },
-  link: { color: "rgba(255,255,255,0.80)", textDecoration: "none", fontSize: "13px" },
-  linkMuted: { color: "rgba(255,255,255,0.55)", textDecoration: "none", fontSize: "13px" },
-  note: {
-    marginTop: "14px",
-    color: "rgba(255,255,255,0.40)",
-    fontSize: "12px",
-    lineHeight: 1.5,
-  },
-};
