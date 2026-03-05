@@ -13,69 +13,112 @@ export default function AgentLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const onSubmit = async (e) => {
+  async function onSubmit(e) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      // 1) Supabase Auth Sign In
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // 1) Supabase Auth login
+      const { data: authData, error: authError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
 
-      if (signInError) throw signInError;
-
-      const userEmail = data?.user?.email;
-      if (!userEmail) throw new Error("Login failed. Please try again.");
-
-      // 2) Check agent exists in agents table (professional access control)
-      const { data: agentRow, error: agentError } = await supabase
-        .from("agents")
-        .select("id, role, status")
-        .eq("email", userEmail)
-        .single();
-
-      if (agentError) throw new Error("Access not found. Please contact admin.");
-      if (agentRow?.status && agentRow.status !== "active") {
-        throw new Error("Your access is not active. Please contact admin.");
+      if (authError) {
+        setError(authError.message || "Login failed. Please try again.");
+        return;
       }
 
-      // 3) Go to dashboard
+      const userId = authData?.user?.id;
+      if (!userId) {
+        setError("Login failed: user not found.");
+        return;
+      }
+
+      // 2) Check Agent access in `agents` table
+      //    Expecting columns like: user_id, email, status, role
+      const { data: agentRow, error: agentError } = await supabase
+        .from("agents")
+        .select("id, email, role, status, user_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (agentError) {
+        setError("Agent access check failed. Please contact admin.");
+        return;
+      }
+
+      if (!agentRow) {
+        setError("Access not found. Please contact admin.");
+        return;
+      }
+
+      const status = String(agentRow.status || "").toLowerCase();
+      if (status && status !== "active") {
+        setError("Your account is not active. Please contact admin.");
+        return;
+      }
+
+      // 3) Success → go to dashboard
       router.push("/agent/dashboard");
     } catch (err) {
-      setError(err?.message || "Login failed.");
+      setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-black/40 backdrop-blur p-6 shadow-2xl">
-        <div className="mb-5">
-          <div className="text-white/90 font-semibold text-lg">MashaAllah Trips</div>
-          <div className="text-white/60 text-sm">Agent Login</div>
+    <div
+      className="container"
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingTop: 24,
+        paddingBottom: 24,
+      }}
+    >
+      <div className="card" style={{ width: "100%", maxWidth: 440 }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 18 }}>MashaAllah Trips</div>
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>
+            Agent Login
+          </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-white mb-2">Sign in</h1>
-        <p className="text-white/60 mb-6 text-sm">
+        <h1 style={{ margin: "8px 0 8px", fontSize: 34, lineHeight: 1.15 }}>
+          Sign in
+        </h1>
+        <p style={{ margin: "0 0 18px", color: "var(--muted)" }}>
           Use your agent credentials to access the internal dashboard.
         </p>
 
         {error ? (
-          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-200 text-sm">
+          <div
+            style={{
+              border: "1px solid rgba(255,80,80,.35)",
+              background: "rgba(255,80,80,.10)",
+              padding: 12,
+              borderRadius: 14,
+              marginBottom: 14,
+              color: "#ffb3b3",
+              fontSize: 14,
+            }}
+          >
             {error}
           </div>
         ) : null}
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label className="text-white/70 text-sm">Email</label>
+        <form onSubmit={onSubmit}>
+          <div style={{ marginBottom: 14 }}>
+            <div className="label">Email</div>
             <input
+              className="input"
               type="email"
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
               placeholder="agent@mashaallahtrips.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -84,11 +127,11 @@ export default function AgentLoginPage() {
             />
           </div>
 
-          <div>
-            <label className="text-white/70 text-sm">Password</label>
+          <div style={{ marginBottom: 18 }}>
+            <div className="label">Password</div>
             <input
+              className="input"
               type="password"
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none focus:border-white/20"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -98,15 +141,30 @@ export default function AgentLoginPage() {
           </div>
 
           <button
+            className="btn"
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl py-3 font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-95 disabled:opacity-60"
+            style={{
+              width: "100%",
+              opacity: loading ? 0.8 : 1,
+              pointerEvents: loading ? "none" : "auto",
+            }}
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
 
-          <div className="flex justify-between text-xs text-white/50 pt-2">
-            <a href="/" className="hover:text-white/70">← Back to Home</a>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginTop: 12,
+              fontSize: 13,
+              color: "var(--muted)",
+            }}
+          >
+            <a href="/" style={{ opacity: 0.95 }}>
+              ← Back to Home
+            </a>
             <span>Need access? Contact admin</span>
           </div>
         </form>
