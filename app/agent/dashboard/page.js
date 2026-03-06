@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -87,7 +88,9 @@ export default function DashboardPage() {
 
           <div style={styles.navTitle}>Navigation</div>
           <div style={styles.nav}>
-            <div style={{ ...styles.navItem, ...styles.navItemActive }}>Dashboard</div>
+            <div style={{ ...styles.navItem, ...styles.navItemActive }}>
+              Dashboard
+            </div>
             <div style={styles.navItem}>Packages</div>
             <div style={styles.navItem}>Quotations</div>
             <div style={styles.navItem}>Bookings</div>
@@ -119,7 +122,11 @@ export default function DashboardPage() {
                   placeholder="Search booking / client..."
                 />
               </div>
-              <button style={styles.primaryBtn}>+ New Quotation</button>
+
+              <Link href="/agent/quotations/new" style={styles.primaryBtn}>
+                + New Quotation
+              </Link>
+
               <button style={styles.logoutBtn} onClick={handleLogout}>
                 Logout
               </button>
@@ -153,7 +160,11 @@ export default function DashboardPage() {
 
               <div style={styles.actions}>
                 <button style={styles.actionBtn}>Create Umrah Package</button>
-                <button style={styles.actionBtn}>Generate Client Quotation</button>
+
+                <Link href="/agent/quotations/new" style={styles.actionBtn}>
+                  Generate Client Quotation
+                </Link>
+
                 <button style={styles.actionBtn}>View Bookings</button>
                 <button style={styles.actionBtn}>Send WhatsApp Quote</button>
               </div>
@@ -179,8 +190,8 @@ export default function DashboardPage() {
                 <div style={styles.tipBox}>
                   <div style={styles.tipTitle}>Tip</div>
                   <div style={styles.tipText}>
-                    Use <b>New Quotation</b> to quickly collect client details and
-                    send a WhatsApp quote.
+                    Use <b>New Quotation</b> to quickly collect client details
+                    and send a WhatsApp quote.
                   </div>
                 </div>
               </div>
@@ -250,7 +261,8 @@ const styles = {
     fontSize: "13px",
   },
   navItemActive: {
-    background: "linear-gradient(135deg, rgba(123,47,247,0.25), rgba(241,7,163,0.12))",
+    background:
+      "linear-gradient(135deg, rgba(123,47,247,0.25), rgba(241,7,163,0.12))",
     border: "1px solid rgba(255,255,255,0.12)",
   },
 
@@ -293,7 +305,12 @@ const styles = {
   muted: { opacity: 0.75, fontSize: "13px", marginTop: "4px" },
   smallMuted: { opacity: 0.65, fontSize: "12px" },
 
-  topRight: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" },
+  topRight: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
   searchWrap: {
     display: "flex",
     alignItems: "center",
@@ -313,6 +330,10 @@ const styles = {
     fontSize: "13px",
   },
   primaryBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
     padding: "10px 12px",
     borderRadius: "12px",
     border: "none",
@@ -365,10 +386,15 @@ const styles = {
 
   actions: { marginTop: "12px", display: "grid", gap: "10px" },
   actionBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
     padding: "12px",
     borderRadius: "12px",
     border: "1px solid rgba(255,255,255,0.10)",
-    background: "linear-gradient(90deg, rgba(123,47,247,0.35), rgba(241,7,163,0.20))",
+    background:
+      "linear-gradient(90deg, rgba(123,47,247,0.35), rgba(241,7,163,0.20))",
     color: "white",
     cursor: "pointer",
     fontSize: "13px",
