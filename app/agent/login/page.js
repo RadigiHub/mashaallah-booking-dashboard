@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -11,15 +12,19 @@ export default function AgentLoginPage() {
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [msg, setMsg] = useState({ type: "", text: "" });
 
-  async function onSubmit(e) {
+  const canSubmit = useMemo(() => {
+    return email.trim().length > 3 && password.length >= 6 && !loading;
+  }, [email, password, loading]);
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    setError("");
+    setMsg({ type: "", text: "" });
     setLoading(true);
 
     try {
-      // 1) Supabase Auth login
+      // 1) Supabase auth login
       const { data: authData, error: authError } =
         await supabase.auth.signInWithPassword({
           email: email.trim(),
@@ -27,148 +32,188 @@ export default function AgentLoginPage() {
         });
 
       if (authError) {
-        setError(authError.message || "Login failed. Please try again.");
+        setMsg({
+          type: "error",
+          text: authError.message || "Login failed. Please try again.",
+        });
         return;
       }
 
-      const userId = authData?.user?.id;
-      if (!userId) {
-        setError("Login failed: user not found.");
+      const user = authData?.user;
+      if (!user?.email) {
+        setMsg({
+          type: "error",
+          text: "Login failed. User email not found.",
+        });
         return;
       }
 
-      // 2) Check Agent access in `agents` table
-      //    Expecting columns like: user_id, email, status, role
+      // 2) Check access in agents table by EMAIL only
       const { data: agentRow, error: agentError } = await supabase
         .from("agents")
-        .select("id, email, role, status, user_id")
-        .eq("user_id", userId)
+        .select("id, email, role, is_active, full_name")
+        .ilike("email", user.email)
         .maybeSingle();
 
       if (agentError) {
-        setError("Agent access check failed. Please contact admin.");
+        await supabase.auth.signOut();
+        setMsg({
+          type: "error",
+          text: "Agent access check failed. Please contact admin.",
+        });
         return;
       }
 
       if (!agentRow) {
-        setError("Access not found. Please contact admin.");
+        await supabase.auth.signOut();
+        setMsg({
+          type: "error",
+          text: "Access not found. Please contact admin.",
+        });
         return;
       }
 
-      const status = String(agentRow.status || "").toLowerCase();
-      if (status && status !== "active") {
-        setError("Your account is not active. Please contact admin.");
+      if (agentRow.is_active === false) {
+        await supabase.auth.signOut();
+        setMsg({
+          type: "error",
+          text: "Your account is disabled. Please contact admin.",
+        });
         return;
       }
 
-      // 3) Success → go to dashboard
+      // 3) Success
+      setMsg({ type: "success", text: "Login successful. Redirecting..." });
       router.push("/agent/dashboard");
     } catch (err) {
-      setError("Something went wrong. Please try again.");
+      setMsg({
+        type: "error",
+        text: err?.message || "Something went wrong. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div
+    <main
       className="container"
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        paddingTop: 24,
-        paddingBottom: 24,
-      }}
+      style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}
     >
-      <div className="card" style={{ width: "100%", maxWidth: 440 }}>
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 18 }}>MashaAllah Trips</div>
-          <div style={{ color: "var(--muted)", fontSize: 13 }}>
-            Agent Login
+      <div className="card" style={{ width: "100%", maxWidth: 520 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 10,
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              display: "grid",
+              placeItems: "center",
+              fontWeight: 800,
+              background:
+                "linear-gradient(135deg, rgba(120,0,255,.55), rgba(255,0,180,.45))",
+              border: "1px solid rgba(255,255,255,.12)",
+            }}
+          >
+            M
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, lineHeight: 1.1 }}>
+              MashaAllah Trips
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Agent Login</div>
           </div>
         </div>
 
-        <h1 style={{ margin: "8px 0 8px", fontSize: 34, lineHeight: 1.15 }}>
+        <h1
+          style={{ fontSize: 36, margin: "10px 0 6px", letterSpacing: "-0.02em" }}
+        >
           Sign in
         </h1>
-        <p style={{ margin: "0 0 18px", color: "var(--muted)" }}>
+        <p style={{ marginTop: 0, color: "var(--muted)", marginBottom: 14 }}>
           Use your agent credentials to access the internal dashboard.
         </p>
 
-        {error ? (
+        {msg?.text ? (
           <div
             style={{
-              border: "1px solid rgba(255,80,80,.35)",
-              background: "rgba(255,80,80,.10)",
-              padding: 12,
+              marginBottom: 12,
+              padding: "10px 12px",
               borderRadius: 14,
-              marginBottom: 14,
-              color: "#ffb3b3",
-              fontSize: 14,
+              border: "1px solid rgba(255,255,255,.12)",
+              background:
+                msg.type === "error"
+                  ? "rgba(255, 70, 70, .10)"
+                  : "rgba(0, 200, 120, .10)",
+              color: msg.type === "error" ? "#ffb4b4" : "#b9ffd9",
             }}
           >
-            {error}
+            {msg.text}
           </div>
         ) : null}
 
-        <form onSubmit={onSubmit}>
-          <div style={{ marginBottom: 14 }}>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 12 }}>
             <div className="label">Email</div>
             <input
               className="input"
               type="email"
+              autoComplete="email"
               placeholder="agent@mashaallahtrips.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
             />
           </div>
 
-          <div style={{ marginBottom: 18 }}>
+          <div style={{ marginBottom: 14 }}>
             <div className="label">Password</div>
             <input
               className="input"
               type="password"
+              autoComplete="current-password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
             />
           </div>
 
           <button
             className="btn"
             type="submit"
-            disabled={loading}
+            disabled={!canSubmit}
             style={{
               width: "100%",
-              opacity: loading ? 0.8 : 1,
-              pointerEvents: loading ? "none" : "auto",
+              opacity: canSubmit ? 1 : 0.6,
+              pointerEvents: canSubmit ? "auto" : "none",
             }}
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginTop: 12,
-              fontSize: 13,
-              color: "var(--muted)",
-            }}
-          >
-            <a href="/" style={{ opacity: 0.95 }}>
-              ← Back to Home
-            </a>
-            <span>Need access? Contact admin</span>
-          </div>
         </form>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: 12,
+            fontSize: 13,
+            color: "var(--muted)",
+          }}
+        >
+          <Link href="/" style={{ opacity: 0.9 }}>
+            ← Back to Home
+          </Link>
+          <span style={{ opacity: 0.9 }}>Need access? Contact admin</span>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
