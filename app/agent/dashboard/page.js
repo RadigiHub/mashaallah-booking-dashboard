@@ -92,7 +92,9 @@ export default function DashboardPage() {
               Dashboard
             </div>
             <div style={styles.navItem}>Packages</div>
-            <div style={styles.navItem}>Quotations</div>
+            <Link href="/agent/quotations" style={styles.navItem}>
+  Quotations
+</Link>
             <div style={styles.navItem}>Bookings</div>
             <div style={styles.navItem}>Settings</div>
           </div>
