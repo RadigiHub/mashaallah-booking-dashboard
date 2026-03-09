@@ -11,6 +11,107 @@ function makeBookingReference() {
   return `MAT-${part1}-${part2}`;
 }
 
+function parsePnr(raw) {
+  if (!raw || !raw.trim()) {
+    return {
+      passengers: [],
+      sectors: [],
+      airline: "",
+      outboundSector: "",
+      returnSector: "",
+      flightNotes: "",
+      summaryText: "",
+    };
+  }
+
+  const text = raw.replace(/\r/g, "");
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const passengers = [];
+  const sectors = [];
+
+  const airportRegex = /\b[A-Z]{3}\b/g;
+  const airlineFlightRegex = /\b([A-Z0-9]{2})\s?(\d{2,4})\b/;
+  const dateRegex = /\b\d{1,2}[A-Z]{3}\b/i;
+  const timeRegex = /\b\d{3,4}[APN]?\b/g;
+
+  for (const line of lines) {
+    const clean = line.replace(/\s+/g, " ").trim();
+
+    // Passenger lines
+    if (clean.includes("/") && !airlineFlightRegex.test(clean) && clean.length < 80) {
+      passengers.push(clean);
+      continue;
+    }
+
+    // Flight-like lines
+    const flightMatch = clean.match(airlineFlightRegex);
+    const airports = clean.match(airportRegex) || [];
+    const dateMatch = clean.match(dateRegex);
+    const times = clean.match(timeRegex) || [];
+
+    if (flightMatch && airports.length >= 2) {
+      const airlineCode = flightMatch[1];
+      const flightNo = flightMatch[2];
+      const from = airports[0];
+      const to = airports[1];
+
+      sectors.push({
+        raw: clean,
+        airlineCode,
+        flightNo,
+        from,
+        to,
+        date: dateMatch ? dateMatch[0].toUpperCase() : "",
+        times,
+      });
+    }
+  }
+
+  const airline =
+    sectors.length > 0 ? `${sectors[0].airlineCode} ${sectors[0].flightNo}` : "";
+
+  const outboundSector =
+    sectors.length > 0
+      ? `${sectors[0].from} → ${sectors[0].to}${
+          sectors[0].date ? ` (${sectors[0].date})` : ""
+        }`
+      : "";
+
+  const returnSector =
+    sectors.length > 1
+      ? `${sectors[1].from} → ${sectors[1].to}${
+          sectors[1].date ? ` (${sectors[1].date})` : ""
+        }`
+      : "";
+
+  const flightNotes = sectors
+    .map((s, i) => {
+      const timeText = s.times?.length ? ` | Times: ${s.times.join(" / ")}` : "";
+      return `Sector ${i + 1}: ${s.airlineCode}${s.flightNo} ${s.from} → ${s.to}${
+        s.date ? ` | Date: ${s.date}` : ""
+      }${timeText}`;
+    })
+    .join("\n");
+
+  const summaryText = passengers.length
+    ? `Passengers: ${passengers.join(", ")}`
+    : "";
+
+  return {
+    passengers,
+    sectors,
+    airline,
+    outboundSector,
+    returnSector,
+    flightNotes,
+    summaryText,
+  };
+}
+
 export default function NewQuotationPage() {
   const router = useRouter();
 
@@ -56,6 +157,10 @@ export default function NewQuotationPage() {
   const [returnSector, setReturnSector] = useState("");
   const [baggage, setBaggage] = useState("");
   const [flightNotes, setFlightNotes] = useState("");
+
+  // PNR
+  const [rawPnr, setRawPnr] = useState("");
+  const [pnrPreview, setPnrPreview] = useState(null);
 
   // Pricing
   const [hotelCost, setHotelCost] = useState("");
@@ -146,6 +251,44 @@ export default function NewQuotationPage() {
       !loading
     );
   }, [clientName, clientPhone, destination, travelDate, totalPrice, loading]);
+
+  function handleConvertPnr() {
+    setMsg({ type: "", text: "" });
+
+    const parsed = parsePnr(rawPnr);
+    setPnrPreview(parsed);
+
+    if (!parsed.sectors.length && !parsed.passengers.length) {
+      setMsg({
+        type: "error",
+        text: "No useful flight details found in pasted PNR. Try another format.",
+      });
+      return;
+    }
+
+    if (parsed.airline && !airline) setAirline(parsed.airline);
+    if (parsed.outboundSector && !outboundSector) setOutboundSector(parsed.outboundSector);
+    if (parsed.returnSector && !returnSector) setReturnSector(parsed.returnSector);
+
+    if (parsed.flightNotes) {
+      setFlightNotes((prev) => {
+        if (prev?.trim()) return prev;
+        return parsed.flightNotes;
+      });
+    }
+
+    if (parsed.summaryText) {
+      setNotes((prev) => {
+        if (prev?.trim()) return `${parsed.summaryText}\n\n${prev}`;
+        return parsed.summaryText;
+      });
+    }
+
+    setMsg({
+      type: "success",
+      text: "PNR converted. Flight fields have been auto-filled where possible.",
+    });
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -448,6 +591,75 @@ export default function NewQuotationPage() {
             <CheckItem label="Meals Included" checked={mealsIncluded} onChange={setMealsIncluded} />
           </div>
 
+          <SectionTitle title="PNR Converter" />
+
+          <div style={{ marginBottom: 12 }}>
+            <Field label="Paste Raw PNR">
+              <textarea
+                className="input"
+                rows={7}
+                value={rawPnr}
+                onChange={(e) => setRawPnr(e.target.value)}
+                placeholder="Paste raw PNR text here..."
+              />
+            </Field>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleConvertPnr}
+              style={{ minWidth: 180 }}
+            >
+              Convert PNR
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setRawPnr("");
+                setPnrPreview(null);
+              }}
+              style={{
+                minWidth: 140,
+                background: "rgba(255,255,255,.06)",
+              }}
+            >
+              Clear PNR
+            </button>
+          </div>
+
+          {pnrPreview ? (
+            <div style={styles.previewBox}>
+              <div style={styles.previewTitle}>PNR Preview</div>
+
+              <div style={styles.previewLine}>
+                <b>Passengers:</b>{" "}
+                {pnrPreview.passengers.length
+                  ? pnrPreview.passengers.join(" | ")
+                  : "Not found"}
+              </div>
+
+              <div style={styles.previewLine}>
+                <b>Detected airline:</b> {pnrPreview.airline || "Not found"}
+              </div>
+
+              <div style={styles.previewLine}>
+                <b>Outbound:</b> {pnrPreview.outboundSector || "Not found"}
+              </div>
+
+              <div style={styles.previewLine}>
+                <b>Return:</b> {pnrPreview.returnSector || "Not found"}
+              </div>
+
+              <div style={styles.previewLine}>
+                <b>Sectors found:</b> {pnrPreview.sectors.length}
+              </div>
+            </div>
+          ) : null}
+
           <SectionTitle title="Hotel Details" />
 
           <div className="row" style={{ marginBottom: 14 }}>
@@ -570,7 +782,7 @@ export default function NewQuotationPage() {
             <Field label="Flight Notes">
               <textarea
                 className="input"
-                rows={3}
+                rows={4}
                 value={flightNotes}
                 onChange={(e) => setFlightNotes(e.target.value)}
                 placeholder="Transit / timings / baggage notes"
@@ -830,5 +1042,23 @@ const styles = {
     pointerEvents: "none",
     color: "rgba(255,255,255,.72)",
     fontSize: 16,
+  },
+  previewBox: {
+    marginBottom: 24,
+    padding: "14px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,.10)",
+    background: "rgba(255,255,255,.04)",
+  },
+  previewTitle: {
+    fontWeight: 800,
+    fontSize: 15,
+    marginBottom: 10,
+  },
+  previewLine: {
+    fontSize: 13,
+    color: "rgba(255,255,255,.82)",
+    marginBottom: 6,
+    lineHeight: 1.5,
   },
 };
