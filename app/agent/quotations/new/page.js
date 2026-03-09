@@ -13,52 +13,77 @@ function makeBookingReference() {
 
 function cleanPassengerName(value) {
   if (!value) return "";
-
   let text = value.trim();
 
   text = text.replace(/^\d+\.\d*/g, "");
   text = text.replace(/\s+/g, " ").trim();
-
   text = text.replace(/MSTR\*INF/g, "MSTR INF");
   text = text.replace(/MSTR\*CNN/g, "MSTR CNN");
   text = text.replace(/\*/g, " ");
+  text = text.replace(/\s{2,}/g, " ").trim();
 
   return text;
 }
 
-function extractPassengers(text) {
-  const matches = [...text.matchAll(/(\d+\.\d*[A-Z\/\*\s]+?(?:MR|MRS|MISS|MS|MSTR(?:\sINF|\sCNN)?))/g)];
-  const names = matches.map((m) => cleanPassengerName(m[1])).filter(Boolean);
-
-  const unique = [];
-  for (const n of names) {
-    if (!unique.includes(n)) unique.push(n);
+function dedupeArray(arr) {
+  const out = [];
+  for (const item of arr) {
+    if (item && !out.includes(item)) out.push(item);
   }
-  return unique;
+  return out;
 }
 
 function splitCombinedSector(value) {
   if (!value) return { from: "", to: "" };
-
   const clean = value.trim().toUpperCase();
-
   if (/^[A-Z]{6}$/.test(clean)) {
     return {
       from: clean.slice(0, 3),
       to: clean.slice(3, 6),
     };
   }
-
   return { from: "", to: "" };
 }
 
-function parseFlightLine(line) {
+function extractPassengersFromRaw(text) {
+  if (!text) return [];
+
+  const lines = text
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const passengers = [];
+
+  for (const line of lines) {
+    if (!line.includes("/")) continue;
+
+    // Flight lines skip
+    if (/\b[A-Z0-9]{2}\s+\d{2,4}[A-Z]?\s+\d{1,2}[A-Z]{3}\b/i.test(line)) {
+      continue;
+    }
+
+    // Split numbered passenger blocks from same line
+    const chunks = line.split(/\s(?=\d+\.)/g);
+    for (const chunk of chunks) {
+      if (!chunk.includes("/")) continue;
+      const cleaned = cleanPassengerName(chunk);
+      if (cleaned) passengers.push(cleaned);
+    }
+  }
+
+  return dedupeArray(passengers);
+}
+
+function parseRawFlightLine(line) {
   const clean = line.replace(/\s+/g, " ").trim().toUpperCase();
 
-  // Example:
-  // SV 124V 26OCT 1 MANJED HK4 1345 2305 /DCSV*ZGPA5V /E
+  // Handles:
+  // 1 SV 124V 26OCT 1 MANJED HK4 1345 2305 /DCSV...
+  // 2 SV 123V 05NOV 4 JEDMAN HK4 0800 1155 /DCSV...
   const pattern =
-    /^([A-Z0-9]{2})\s+(\d{2,4})[A-Z]?\s+(\d{1,2}[A-Z]{3})\s+\d+\s+([A-Z]{6})\s+[A-Z]{2}\d+\s+(\d{3,4})\s+(\d{3,4})/;
+    /^\d+\s+([A-Z0-9]{2})\s+(\d{2,4})[A-Z]?\s+(\d{1,2}[A-Z]{3})\s+\d+\s+([A-Z]{6})\s+[A-Z]{2}\d+\s+(\d{3,4})\s+(\d{3,4})/;
 
   const match = clean.match(pattern);
   if (!match) return null;
@@ -84,7 +109,7 @@ function parseFlightLine(line) {
   };
 }
 
-function parsePnr(raw) {
+function parseRawPnr(raw) {
   if (!raw || !raw.trim()) {
     return {
       passengers: [],
@@ -94,6 +119,7 @@ function parsePnr(raw) {
       returnSector: "",
       flightNotes: "",
       summaryText: "",
+      travelDate: "",
     };
   }
 
@@ -103,11 +129,11 @@ function parsePnr(raw) {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const passengers = extractPassengers(normalized);
+  const passengers = extractPassengersFromRaw(normalized);
 
   const sectors = [];
   for (const line of lines) {
-    const sector = parseFlightLine(line);
+    const sector = parseRawFlightLine(line);
     if (sector) sectors.push(sector);
   }
 
@@ -115,19 +141,21 @@ function parsePnr(raw) {
   if (sectors.length === 1) {
     airline = `${sectors[0].airlineCode} ${sectors[0].flightNo}`;
   } else if (sectors.length >= 2) {
-    airline = sectors
-      .map((s) => `${s.airlineCode} ${s.flightNo}`)
-      .join(" / ");
+    airline = dedupeArray(sectors.map((s) => s.airlineCode)).join(" / ");
   }
 
   const outboundSector =
     sectors.length > 0
-      ? `${sectors[0].from} → ${sectors[0].to}${sectors[0].date ? ` (${sectors[0].date})` : ""}`
+      ? `${sectors[0].from} → ${sectors[0].to}${
+          sectors[0].date ? ` (${sectors[0].date})` : ""
+        }`
       : "";
 
   const returnSector =
     sectors.length > 1
-      ? `${sectors[1].from} → ${sectors[1].to}${sectors[1].date ? ` (${sectors[1].date})` : ""}`
+      ? `${sectors[1].from} → ${sectors[1].to}${
+          sectors[1].date ? ` (${sectors[1].date})` : ""
+        }`
       : "";
 
   const flightNotes = sectors
@@ -136,7 +164,11 @@ function parsePnr(raw) {
     })
     .join("\n");
 
-  const summaryText = passengers.length ? `Passengers: ${passengers.join(", ")}` : "";
+  const summaryText = passengers.length
+    ? `Passengers: ${passengers.join(", ")}`
+    : "";
+
+  const travelDate = sectors.length > 0 ? sectors[0].date : "";
 
   return {
     passengers,
@@ -146,6 +178,119 @@ function parsePnr(raw) {
     returnSector,
     flightNotes,
     summaryText,
+    travelDate,
+  };
+}
+
+function parseRenderedItinerary(text) {
+  if (!text || !text.trim()) {
+    return {
+      passengers: [],
+      sectors: [],
+      airline: "",
+      outboundSector: "",
+      returnSector: "",
+      flightNotes: "",
+      summaryText: "",
+      travelDate: "",
+    };
+  }
+
+  const normalized = text.replace(/\r/g, "\n").trim();
+  const lines = normalized
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const passengers = [];
+  const sectors = [];
+
+  // Passenger lines
+  for (const line of lines) {
+    if (/( MR| MRS| MISS| MS| MSTR)\b/i.test(` ${line}`) && line.includes("/")) {
+      passengers.push(cleanPassengerName(line));
+    }
+  }
+
+  // Detect sectors from human-readable itinerary
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Example:
+    // Outbound: Manchester → Jeddah
+    // Return: Jeddah → Manchester
+    if (/^(Outbound|Return)\s*:/i.test(line)) {
+      const type = /^Outbound/i.test(line) ? "outbound" : "return";
+      const sectorMatch = line.match(/:\s*(.+?)\s*→\s*(.+?)(?:\s{2,}|$)/i);
+
+      let from = "";
+      let to = "";
+      if (sectorMatch) {
+        from = sectorMatch[1].trim();
+        to = sectorMatch[2].trim();
+      }
+
+      let airlineLine = lines[i + 1] || "";
+      let timingLine = lines[i + 2] || "";
+      let arrivalLine = lines[i + 3] || "";
+
+      sectors.push({
+        type,
+        from,
+        to,
+        raw: [line, airlineLine, timingLine, arrivalLine].filter(Boolean).join(" | "),
+        airlineLine,
+        timingLine,
+        arrivalLine,
+      });
+    }
+  }
+
+  let airline = "";
+  const joinedText = normalized;
+
+  // Try flight numbers e.g. SV124, BA284
+  const flightCodeMatches = [...joinedText.matchAll(/\b([A-Z0-9]{2}\s?\d{2,4})\b/g)].map((m) =>
+    m[1].replace(/\s+/g, "")
+  );
+  if (flightCodeMatches.length) {
+    airline = dedupeArray(flightCodeMatches).join(" / ");
+  }
+
+  const outboundSector =
+    sectors.find((s) => s.type === "outbound")
+      ? `${sectors.find((s) => s.type === "outbound").from} → ${
+          sectors.find((s) => s.type === "outbound").to
+        }`
+      : "";
+
+  const returnSector =
+    sectors.find((s) => s.type === "return")
+      ? `${sectors.find((s) => s.type === "return").from} → ${
+          sectors.find((s) => s.type === "return").to
+        }`
+      : "";
+
+  const flightNotes = sectors.map((s) => s.raw).join("\n");
+
+  const summaryText = passengers.length
+    ? `Passengers: ${dedupeArray(passengers).join(", ")}`
+    : "";
+
+  const travelDateMatch = joinedText.match(
+    /\b(\d{1,2}\s?[A-Z][a-z]{2}|\d{1,2}[A-Z]{3}|\d{4}-\d{2}-\d{2})\b/
+  );
+  const travelDate = travelDateMatch ? travelDateMatch[1] : "";
+
+  return {
+    passengers: dedupeArray(passengers),
+    sectors,
+    airline,
+    outboundSector,
+    returnSector,
+    flightNotes,
+    summaryText,
+    travelDate,
   };
 }
 
@@ -192,6 +337,7 @@ export default function NewQuotationPage() {
   const [flightNotes, setFlightNotes] = useState("");
 
   const [rawPnr, setRawPnr] = useState("");
+  const [renderedItinerary, setRenderedItinerary] = useState("");
   const [pnrPreview, setPnrPreview] = useState(null);
 
   const [hotelCost, setHotelCost] = useState("");
@@ -279,19 +425,10 @@ export default function NewQuotationPage() {
     );
   }, [clientName, clientPhone, destination, travelDate, totalPrice, loading]);
 
-  function handleConvertPnr() {
-    setMsg({ type: "", text: "" });
+  function applyParsedData(parsed, sourceLabel) {
+    if (!parsed) return;
 
-    const parsed = parsePnr(rawPnr);
     setPnrPreview(parsed);
-
-    if (!parsed.sectors.length && !parsed.passengers.length) {
-      setMsg({
-        type: "error",
-        text: "No useful flight details found in pasted PNR. Try another format.",
-      });
-      return;
-    }
 
     if (parsed.airline) setAirline(parsed.airline);
     if (parsed.outboundSector) setOutboundSector(parsed.outboundSector);
@@ -300,6 +437,10 @@ export default function NewQuotationPage() {
 
     if (parsed.passengers.length && !clientName.trim()) {
       setClientName(parsed.passengers[0]);
+    }
+
+    if (parsed.travelDate && !travelDate.trim()) {
+      setTravelDate(parsed.travelDate);
     }
 
     if (parsed.summaryText) {
@@ -311,10 +452,30 @@ export default function NewQuotationPage() {
       });
     }
 
+    if (!parsed.sectors.length && !parsed.passengers.length) {
+      setMsg({
+        type: "error",
+        text: `${sourceLabel}: no useful details found. Try another format.`,
+      });
+      return;
+    }
+
     setMsg({
       type: "success",
-      text: "PNR converted. Matching flight fields have been auto-filled.",
+      text: `${sourceLabel} parsed. Matching fields have been auto-filled.`,
     });
+  }
+
+  function handleConvertPnr() {
+    setMsg({ type: "", text: "" });
+    const parsed = parseRawPnr(rawPnr);
+    applyParsedData(parsed, "Raw PNR");
+  }
+
+  function handleParseRenderedItinerary() {
+    setMsg({ type: "", text: "" });
+    const parsed = parseRenderedItinerary(renderedItinerary);
+    applyParsedData(parsed, "Rendered itinerary");
   }
 
   async function handleSubmit(e) {
@@ -411,7 +572,10 @@ export default function NewQuotationPage() {
   }
 
   return (
-    <main className="container" style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
+    <main
+      className="container"
+      style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}
+    >
       <div className="card" style={{ width: "100%", maxWidth: 1100 }}>
         <div style={styles.topbar}>
           <div>
@@ -433,7 +597,10 @@ export default function NewQuotationPage() {
               padding: "12px 14px",
               borderRadius: 14,
               border: "1px solid rgba(255,255,255,.12)",
-              background: msg.type === "error" ? "rgba(255,70,70,.10)" : "rgba(0,200,120,.10)",
+              background:
+                msg.type === "error"
+                  ? "rgba(255,70,70,.10)"
+                  : "rgba(0,200,120,.10)",
               color: msg.type === "error" ? "#ffb4b4" : "#b9ffd9",
             }}
           >
@@ -446,34 +613,71 @@ export default function NewQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Client Name">
-              <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client full name" required />
+              <input
+                className="input"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="Client full name"
+                required
+              />
             </Field>
             <Field label="Client Phone">
-              <input className="input" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+44..." required />
+              <input
+                className="input"
+                value={clientPhone}
+                onChange={(e) => setClientPhone(e.target.value)}
+                placeholder="+44..."
+                required
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Client Email">
-              <input className="input" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@email.com" />
+              <input
+                className="input"
+                value={clientEmail}
+                onChange={(e) => setClientEmail(e.target.value)}
+                placeholder="client@email.com"
+              />
             </Field>
             <Field label="Departure City">
-              <input className="input" value={departureCity} onChange={(e) => setDepartureCity(e.target.value)} placeholder="London / Manchester" />
+              <input
+                className="input"
+                value={departureCity}
+                onChange={(e) => setDepartureCity(e.target.value)}
+                placeholder="London / Manchester"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 18 }}>
             <Field label="Adults">
-              <input className="input" type="number" value={adults} onChange={(e) => setAdults(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={adults}
+                onChange={(e) => setAdults(e.target.value)}
+              />
             </Field>
             <Field label="Children">
-              <input className="input" type="number" value={children} onChange={(e) => setChildren(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={children}
+                onChange={(e) => setChildren(e.target.value)}
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 24 }}>
             <Field label="Infants">
-              <input className="input" type="number" value={infants} onChange={(e) => setInfants(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={infants}
+                onChange={(e) => setInfants(e.target.value)}
+              />
             </Field>
             <Field label="Booking Reference">
               <input className="input" value={bookingReference} readOnly />
@@ -484,28 +688,60 @@ export default function NewQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Package Title">
-              <input className="input" value={packageTitle} onChange={(e) => setPackageTitle(e.target.value)} placeholder="5-Star Umrah with Flights" />
+              <input
+                className="input"
+                value={packageTitle}
+                onChange={(e) => setPackageTitle(e.target.value)}
+                placeholder="5-Star Umrah with Flights"
+              />
             </Field>
             <Field label="Umrah Type">
-              <input className="input" value={umrahType} onChange={(e) => setUmrahType(e.target.value)} placeholder="Ramadan / Standard / Family" />
+              <input
+                className="input"
+                value={umrahType}
+                onChange={(e) => setUmrahType(e.target.value)}
+                placeholder="Ramadan / Standard / Family"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Destination">
-              <input className="input" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Makkah / Madinah" required />
+              <input
+                className="input"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder="Makkah / Madinah"
+                required
+              />
             </Field>
             <Field label="Travel Date">
-              <input className="input" value={travelDate} onChange={(e) => setTravelDate(e.target.value)} placeholder="2026-03-20" required />
+              <input
+                className="input"
+                value={travelDate}
+                onChange={(e) => setTravelDate(e.target.value)}
+                placeholder="2026-03-20"
+                required
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 18 }}>
             <Field label="Makkah Nights">
-              <input className="input" type="number" value={makkahNights} onChange={(e) => setMakkahNights(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={makkahNights}
+                onChange={(e) => setMakkahNights(e.target.value)}
+              />
             </Field>
             <Field label="Madinah Nights">
-              <input className="input" type="number" value={madinahNights} onChange={(e) => setMadinahNights(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={madinahNights}
+                onChange={(e) => setMadinahNights(e.target.value)}
+              />
             </Field>
           </div>
 
@@ -516,10 +752,20 @@ export default function NewQuotationPage() {
 
             <Field label="Quotation Status">
               <div style={styles.selectWrap}>
-                <select value={quotationStatus} onChange={(e) => setQuotationStatus(e.target.value)} style={styles.select}>
-                  <option style={styles.option} value="draft">Draft</option>
-                  <option style={styles.option} value="sent">Sent</option>
-                  <option style={styles.option} value="confirmed">Confirmed</option>
+                <select
+                  value={quotationStatus}
+                  onChange={(e) => setQuotationStatus(e.target.value)}
+                  style={styles.select}
+                >
+                  <option style={styles.option} value="draft">
+                    Draft
+                  </option>
+                  <option style={styles.option} value="sent">
+                    Sent
+                  </option>
+                  <option style={styles.option} value="confirmed">
+                    Confirmed
+                  </option>
                 </select>
                 <span style={styles.selectArrow}>⌄</span>
               </div>
@@ -542,14 +788,19 @@ export default function NewQuotationPage() {
                 rows={7}
                 value={rawPnr}
                 onChange={(e) => setRawPnr(e.target.value)}
-                placeholder="Paste raw PNR text here..."
+                placeholder="Paste raw cryptic PNR here..."
               />
             </Field>
           </div>
 
-          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-            <button type="button" className="btn" onClick={handleConvertPnr} style={{ minWidth: 180 }}>
-              Convert PNR
+          <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleConvertPnr}
+              style={{ minWidth: 180 }}
+            >
+              Convert Raw PNR
             </button>
 
             <button
@@ -561,18 +812,66 @@ export default function NewQuotationPage() {
               }}
               style={{ minWidth: 140, background: "rgba(255,255,255,.06)" }}
             >
-              Clear PNR
+              Clear Raw
+            </button>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <Field label="Paste Rendered Itinerary / Converted Output">
+              <textarea
+                className="input"
+                rows={8}
+                value={renderedItinerary}
+                onChange={(e) => setRenderedItinerary(e.target.value)}
+                placeholder="Paste readable itinerary text here. Example: Outbound: Manchester → Jeddah ..."
+              />
+            </Field>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleParseRenderedItinerary}
+              style={{ minWidth: 220 }}
+            >
+              Parse Rendered Itinerary
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setRenderedItinerary("");
+                setPnrPreview(null);
+              }}
+              style={{ minWidth: 160, background: "rgba(255,255,255,.06)" }}
+            >
+              Clear Rendered
             </button>
           </div>
 
           {pnrPreview ? (
             <div style={styles.previewBox}>
               <div style={styles.previewTitle}>PNR Preview</div>
-              <div style={styles.previewLine}><b>Passengers:</b> {pnrPreview.passengers.length ? pnrPreview.passengers.join(" | ") : "Not found"}</div>
-              <div style={styles.previewLine}><b>Detected airline:</b> {pnrPreview.airline || "Not found"}</div>
-              <div style={styles.previewLine}><b>Outbound:</b> {pnrPreview.outboundSector || "Not found"}</div>
-              <div style={styles.previewLine}><b>Return:</b> {pnrPreview.returnSector || "Not found"}</div>
-              <div style={styles.previewLine}><b>Sectors found:</b> {pnrPreview.sectors.length}</div>
+              <div style={styles.previewLine}>
+                <b>Passengers:</b>{" "}
+                {pnrPreview.passengers.length
+                  ? pnrPreview.passengers.join(" | ")
+                  : "Not found"}
+              </div>
+              <div style={styles.previewLine}>
+                <b>Detected airline:</b> {pnrPreview.airline || "Not found"}
+              </div>
+              <div style={styles.previewLine}>
+                <b>Outbound:</b> {pnrPreview.outboundSector || "Not found"}
+              </div>
+              <div style={styles.previewLine}>
+                <b>Return:</b> {pnrPreview.returnSector || "Not found"}
+              </div>
+              <div style={styles.previewLine}>
+                <b>Sectors found:</b> {pnrPreview.sectors.length}
+              </div>
             </div>
           ) : null}
 
@@ -580,37 +879,77 @@ export default function NewQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Makkah Hotel Name">
-              <input className="input" value={makkahHotelName} onChange={(e) => setMakkahHotelName(e.target.value)} placeholder="Swissotel / Pullman..." />
+              <input
+                className="input"
+                value={makkahHotelName}
+                onChange={(e) => setMakkahHotelName(e.target.value)}
+                placeholder="Swissotel / Pullman..."
+              />
             </Field>
             <Field label="Makkah Hotel Rating">
-              <input className="input" value={makkahHotelRating} onChange={(e) => setMakkahHotelRating(e.target.value)} placeholder="5 Star" />
+              <input
+                className="input"
+                value={makkahHotelRating}
+                onChange={(e) => setMakkahHotelRating(e.target.value)}
+                placeholder="5 Star"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Makkah Room Type">
-              <input className="input" value={makkahRoomType} onChange={(e) => setMakkahRoomType(e.target.value)} placeholder="Quad / Triple / Double" />
+              <input
+                className="input"
+                value={makkahRoomType}
+                onChange={(e) => setMakkahRoomType(e.target.value)}
+                placeholder="Quad / Triple / Double"
+              />
             </Field>
             <Field label="Makkah Distance">
-              <input className="input" value={makkahDistance} onChange={(e) => setMakkahDistance(e.target.value)} placeholder="200m from Haram" />
+              <input
+                className="input"
+                value={makkahDistance}
+                onChange={(e) => setMakkahDistance(e.target.value)}
+                placeholder="200m from Haram"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Madinah Hotel Name">
-              <input className="input" value={madinahHotelName} onChange={(e) => setMadinahHotelName(e.target.value)} placeholder="Anwar Al Madinah..." />
+              <input
+                className="input"
+                value={madinahHotelName}
+                onChange={(e) => setMadinahHotelName(e.target.value)}
+                placeholder="Anwar Al Madinah..."
+              />
             </Field>
             <Field label="Madinah Hotel Rating">
-              <input className="input" value={madinahHotelRating} onChange={(e) => setMadinahHotelRating(e.target.value)} placeholder="5 Star" />
+              <input
+                className="input"
+                value={madinahHotelRating}
+                onChange={(e) => setMadinahHotelRating(e.target.value)}
+                placeholder="5 Star"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 24 }}>
             <Field label="Madinah Room Type">
-              <input className="input" value={madinahRoomType} onChange={(e) => setMadinahRoomType(e.target.value)} placeholder="Quad / Triple / Double" />
+              <input
+                className="input"
+                value={madinahRoomType}
+                onChange={(e) => setMadinahRoomType(e.target.value)}
+                placeholder="Quad / Triple / Double"
+              />
             </Field>
             <Field label="Madinah Distance">
-              <input className="input" value={madinahDistance} onChange={(e) => setMadinahDistance(e.target.value)} placeholder="150m from Masjid Nabawi" />
+              <input
+                className="input"
+                value={madinahDistance}
+                onChange={(e) => setMadinahDistance(e.target.value)}
+                placeholder="150m from Masjid Nabawi"
+              />
             </Field>
           </div>
 
@@ -618,25 +957,51 @@ export default function NewQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Airline">
-              <input className="input" value={airline} onChange={(e) => setAirline(e.target.value)} placeholder="Saudi / Qatar / Turkish" />
+              <input
+                className="input"
+                value={airline}
+                onChange={(e) => setAirline(e.target.value)}
+                placeholder="Saudi / Qatar / Turkish"
+              />
             </Field>
             <Field label="Baggage">
-              <input className="input" value={baggage} onChange={(e) => setBaggage(e.target.value)} placeholder="23kg + 7kg" />
+              <input
+                className="input"
+                value={baggage}
+                onChange={(e) => setBaggage(e.target.value)}
+                placeholder="23kg + 7kg"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Outbound Sector">
-              <input className="input" value={outboundSector} onChange={(e) => setOutboundSector(e.target.value)} placeholder="LHR → JED" />
+              <input
+                className="input"
+                value={outboundSector}
+                onChange={(e) => setOutboundSector(e.target.value)}
+                placeholder="LHR → JED"
+              />
             </Field>
             <Field label="Return Sector">
-              <input className="input" value={returnSector} onChange={(e) => setReturnSector(e.target.value)} placeholder="MED → LHR" />
+              <input
+                className="input"
+                value={returnSector}
+                onChange={(e) => setReturnSector(e.target.value)}
+                placeholder="MED → LHR"
+              />
             </Field>
           </div>
 
           <div style={{ marginBottom: 24 }}>
             <Field label="Flight Notes">
-              <textarea className="input" rows={4} value={flightNotes} onChange={(e) => setFlightNotes(e.target.value)} placeholder="Transit / timings / baggage notes" />
+              <textarea
+                className="input"
+                rows={4}
+                value={flightNotes}
+                onChange={(e) => setFlightNotes(e.target.value)}
+                placeholder="Transit / timings / baggage notes"
+              />
             </Field>
           </div>
 
@@ -644,37 +1009,78 @@ export default function NewQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Hotel Cost">
-              <input className="input" value={hotelCost} onChange={(e) => setHotelCost(e.target.value)} placeholder="500" />
+              <input
+                className="input"
+                value={hotelCost}
+                onChange={(e) => setHotelCost(e.target.value)}
+                placeholder="500"
+              />
             </Field>
             <Field label="Flight Cost">
-              <input className="input" value={flightCost} onChange={(e) => setFlightCost(e.target.value)} placeholder="350" />
+              <input
+                className="input"
+                value={flightCost}
+                onChange={(e) => setFlightCost(e.target.value)}
+                placeholder="350"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Visa Cost">
-              <input className="input" value={visaCost} onChange={(e) => setVisaCost(e.target.value)} placeholder="120" />
+              <input
+                className="input"
+                value={visaCost}
+                onChange={(e) => setVisaCost(e.target.value)}
+                placeholder="120"
+              />
             </Field>
             <Field label="Transport Cost">
-              <input className="input" value={transportCost} onChange={(e) => setTransportCost(e.target.value)} placeholder="80" />
+              <input
+                className="input"
+                value={transportCost}
+                onChange={(e) => setTransportCost(e.target.value)}
+                placeholder="80"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Ziyarat Cost">
-              <input className="input" value={ziyaratCost} onChange={(e) => setZiyaratCost(e.target.value)} placeholder="50" />
+              <input
+                className="input"
+                value={ziyaratCost}
+                onChange={(e) => setZiyaratCost(e.target.value)}
+                placeholder="50"
+              />
             </Field>
             <Field label="Other Cost">
-              <input className="input" value={otherCost} onChange={(e) => setOtherCost(e.target.value)} placeholder="30" />
+              <input
+                className="input"
+                value={otherCost}
+                onChange={(e) => setOtherCost(e.target.value)}
+                placeholder="30"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 18 }}>
             <Field label="Agent Profit">
-              <input className="input" value={agentProfit} onChange={(e) => setAgentProfit(e.target.value)} placeholder="150" />
+              <input
+                className="input"
+                value={agentProfit}
+                onChange={(e) => setAgentProfit(e.target.value)}
+                placeholder="150"
+              />
             </Field>
             <Field label="Total Selling Price">
-              <input className="input" value={totalPrice} onChange={(e) => setTotalPrice(e.target.value)} placeholder="1230" required />
+              <input
+                className="input"
+                value={totalPrice}
+                onChange={(e) => setTotalPrice(e.target.value)}
+                placeholder="1230"
+                required
+              />
             </Field>
           </div>
 
@@ -682,7 +1088,12 @@ export default function NewQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Deposit Amount">
-              <input className="input" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} placeholder="200" />
+              <input
+                className="input"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="200"
+              />
             </Field>
             <Field label="Remaining Balance">
               <input className="input" value={remainingBalance} readOnly />
@@ -691,7 +1102,12 @@ export default function NewQuotationPage() {
 
           <div style={{ marginBottom: 18 }}>
             <Field label="Payment Plan">
-              <input className="input" value={paymentPlan} onChange={(e) => setPaymentPlan(e.target.value)} placeholder="Deposit + remaining before travel" />
+              <input
+                className="input"
+                value={paymentPlan}
+                onChange={(e) => setPaymentPlan(e.target.value)}
+                placeholder="Deposit + remaining before travel"
+              />
             </Field>
           </div>
 
@@ -699,7 +1115,13 @@ export default function NewQuotationPage() {
 
           <div style={{ marginBottom: 22 }}>
             <Field label="Internal / Client Notes">
-              <textarea className="input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special requests / room preference / elderly passengers / wheelchairs etc." />
+              <textarea
+                className="input"
+                rows={4}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Special requests / room preference / elderly passengers / wheelchairs etc."
+              />
             </Field>
           </div>
 
