@@ -3,19 +3,19 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase } from "../../../lib/supabaseClient";
 
-export default function QuotationsPage() {
+export default function SavedQuotationsPage() {
   const router = useRouter();
 
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [agentName, setAgentName] = useState("Agent");
-  const [rows, setRows] = useState([]);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [quotes, setQuotes] = useState([]);
+  const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    async function initPage() {
+    async function loadPage() {
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData?.session;
 
@@ -43,73 +43,112 @@ export default function QuotationsPage() {
 
       const { data, error } = await supabase
         .from("quotations")
-        .select(
-          "id, client_name, client_phone, destination, travel_date, total_price, quotation_status, booking_reference, created_at"
-        )
+        .select("*")
         .order("created_at", { ascending: false });
 
       if (error) {
-        setErrorMsg(error.message || "Failed to load quotations.");
-        setRows([]);
-      } else {
-        setRows(data || []);
+        setMsg("Failed to load quotations.");
+        setLoading(false);
+        return;
       }
 
+      setQuotes(data || []);
       setLoading(false);
     }
 
-    initPage();
+    loadPage();
   }, [router]);
 
-  if (checking) {
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/agent/login");
+  }
+
+  if (checking || loading) {
     return (
       <div style={styles.loadingWrap}>
-        Loading quotations...
+        Loading saved quotations...
       </div>
     );
   }
 
   return (
-    <main style={styles.page}>
+    <div style={styles.page}>
       <div style={styles.shell}>
-        <div style={styles.topbar}>
-          <div>
-            <h1 style={styles.title}>Saved Quotations</h1>
-            <p style={styles.subtitle}>
-              View all saved Umrah quotations created in the system.
-            </p>
+        <aside style={styles.sidebar}>
+          <div style={styles.brandRow}>
+            <div style={styles.logo}>M</div>
+            <div>
+              <div style={styles.brand}>MashaAllah Trips</div>
+              <div style={styles.sub}>Agent Panel</div>
+            </div>
           </div>
 
-          <div style={styles.topActions}>
-            <Link href="/agent/quotations/new" style={styles.primaryBtn}>
-              + New Quotation
-            </Link>
+          <div style={styles.navTitle}>Navigation</div>
 
-            <Link href="/agent/dashboard" style={styles.secondaryBtn}>
-              ← Back to Dashboard
+          <div style={styles.nav}>
+            <Link href="/agent/dashboard" style={styles.navItem}>
+              Dashboard
             </Link>
+            <div style={{ ...styles.navItem, ...styles.navItemActive }}>
+              Quotations
+            </div>
+            <div style={styles.navItem}>Packages</div>
+            <div style={styles.navItem}>Bookings</div>
+            <div style={styles.navItem}>Settings</div>
           </div>
-        </div>
 
-        <div style={styles.infoBar}>
-          <span>
-            Logged in as <b>{agentName}</b>
-          </span>
-          <span>
-            Total quotations: <b>{rows.length}</b>
-          </span>
-        </div>
+          <div style={styles.sidebarFooter}>
+            <div style={styles.smallMuted}>Logged in as</div>
+            <div style={{ marginTop: 6, fontWeight: 700 }}>{agentName}</div>
 
-        {errorMsg ? (
-          <div style={styles.errorBox}>{errorMsg}</div>
-        ) : null}
+            <button style={styles.logoutBtnSide} onClick={handleLogout}>
+              Logout
+            </button>
+          </div>
+        </aside>
 
-        <div style={styles.tableCard}>
-          {loading ? (
-            <div style={styles.emptyState}>Loading saved quotations...</div>
-          ) : rows.length === 0 ? (
-            <div style={styles.emptyState}>
-              No quotations found yet. Create your first quotation.
+        <main style={styles.main}>
+          <div style={styles.topbar}>
+            <div>
+              <div style={styles.h1}>Saved Quotations</div>
+              <div style={styles.muted}>
+                View all saved Umrah quotations created in the system.
+              </div>
+            </div>
+
+            <div style={styles.topButtons}>
+              <Link href="/agent/quotations/new" style={styles.primaryBtn}>
+                + New Quotation
+              </Link>
+
+              <Link href="/agent/dashboard" style={styles.secondaryBtn}>
+                ← Back to Dashboard
+              </Link>
+            </div>
+          </div>
+
+          {msg ? <div style={styles.alert}>{msg}</div> : null}
+
+          <div style={styles.infoBar}>
+            <div>
+              Logged in as <b>{agentName}</b>
+            </div>
+            <div>
+              Total quotations: <b>{quotes.length}</b>
+            </div>
+          </div>
+
+          {quotes.length === 0 ? (
+            <div style={styles.emptyCard}>
+              <div style={styles.emptyTitle}>No quotations yet</div>
+              <div style={styles.emptyText}>
+                Abhi tak koi quotation save nahi hui.
+              </div>
+
+              <Link href="/agent/quotations/new" style={styles.primaryBtn}>
+                Create First Quotation
+              </Link>
             </div>
           ) : (
             <div style={styles.tableWrap}>
@@ -124,37 +163,40 @@ export default function QuotationsPage() {
                     <th style={styles.th}>Total Price</th>
                     <th style={styles.th}>Status</th>
                     <th style={styles.th}>Created</th>
+                    <th style={styles.th}>Action</th>
                   </tr>
                 </thead>
+
                 <tbody>
-                  {rows.map((item) => (
+                  {quotes.map((item) => (
                     <tr key={item.id} style={styles.tr}>
                       <td style={styles.td}>
                         <span style={styles.refBadge}>
-                          {item.booking_reference || "—"}
+                          {safe(item.booking_reference)}
                         </span>
                       </td>
-                      <td style={styles.td}>{item.client_name || "—"}</td>
-                      <td style={styles.td}>{item.client_phone || "—"}</td>
-                      <td style={styles.td}>{item.destination || "—"}</td>
-                      <td style={styles.td}>{item.travel_date || "—"}</td>
-                      <td style={styles.td}>{item.total_price || "—"}</td>
+
+                      <td style={styles.td}>{safe(item.client_name)}</td>
+                      <td style={styles.td}>{safe(item.client_phone)}</td>
+                      <td style={styles.td}>{safe(item.destination)}</td>
+                      <td style={styles.td}>{safe(item.travel_date)}</td>
+                      <td style={styles.td}>{formatPrice(item.total_price)}</td>
+
                       <td style={styles.td}>
-                        <span
-                          style={{
-                            ...styles.statusBadge,
-                            ...(item.quotation_status === "confirmed"
-                              ? styles.statusConfirmed
-                              : item.quotation_status === "sent"
-                              ? styles.statusSent
-                              : styles.statusDraft),
-                          }}
+                        <span style={statusBadgeStyle(item.quotation_status)}>
+                          {safe(item.quotation_status)}
+                        </span>
+                      </td>
+
+                      <td style={styles.td}>{formatDate(item.created_at)}</td>
+
+                      <td style={styles.td}>
+                        <Link
+                          href={`/agent/quotations/${item.id}`}
+                          style={styles.viewBtn}
                         >
-                          {item.quotation_status || "draft"}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        {formatDate(item.created_at)}
+                          View
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -162,17 +204,65 @@ export default function QuotationsPage() {
               </table>
             </div>
           )}
-        </div>
+        </main>
       </div>
-    </main>
+    </div>
   );
+}
+
+function safe(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
 }
 
 function formatDate(value) {
   if (!value) return "—";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
+  if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleDateString();
+}
+
+function formatPrice(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value).startsWith("£") ? String(value) : `£${value}`;
+}
+
+function statusBadgeStyle(status) {
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: 700,
+    textTransform: "capitalize",
+    border: "1px solid rgba(255,255,255,0.08)",
+  };
+
+  const s = String(status || "").toLowerCase();
+
+  if (s === "confirmed") {
+    return {
+      ...base,
+      background: "rgba(0,200,120,0.14)",
+      color: "#b9ffd9",
+    };
+  }
+
+  if (s === "sent") {
+    return {
+      ...base,
+      background: "rgba(80,140,255,0.14)",
+      color: "#c8dcff",
+    };
+  }
+
+  return {
+    ...base,
+    background: "rgba(255,255,255,0.07)",
+    color: "#f1f1f7",
+  };
 }
 
 const styles = {
@@ -186,67 +276,139 @@ const styles = {
     padding: "28px",
     boxSizing: "border-box",
   },
+
   shell: {
-    maxWidth: "1250px",
+    maxWidth: "1280px",
     margin: "0 auto",
-  },
-  loadingWrap: {
-    minHeight: "100vh",
     display: "grid",
-    placeItems: "center",
-    background:
-      "radial-gradient(1200px 700px at 15% 20%, rgba(123,47,247,0.35), transparent 55%), radial-gradient(900px 600px at 85% 30%, rgba(241,7,163,0.25), transparent 55%), radial-gradient(700px 500px at 50% 95%, rgba(0,255,200,0.10), transparent 60%), #070712",
-    color: "white",
-    fontFamily:
-      "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+    gridTemplateColumns: "280px 1fr",
+    gap: "18px",
   },
+
+  sidebar: {
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "16px",
+    padding: "18px",
+    backdropFilter: "blur(10px)",
+    minHeight: "calc(100vh - 56px)",
+    display: "flex",
+    flexDirection: "column",
+  },
+
+  brandRow: { display: "flex", gap: "12px", alignItems: "center" },
+
+  logo: {
+    width: "44px",
+    height: "44px",
+    borderRadius: "12px",
+    background: "linear-gradient(135deg,#7b2ff7,#f107a3)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+  },
+
+  brand: { fontWeight: 700, fontSize: "14px" },
+  sub: { opacity: 0.7, fontSize: "12px" },
+
+  navTitle: { marginTop: "18px", opacity: 0.7, fontSize: "12px" },
+
+  nav: { marginTop: "10px", display: "grid", gap: "8px" },
+
+  navItem: {
+    padding: "12px 12px",
+    borderRadius: "12px",
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    fontSize: "13px",
+    color: "white",
+    textDecoration: "none",
+  },
+
+  navItemActive: {
+    background:
+      "linear-gradient(135deg, rgba(123,47,247,0.25), rgba(241,7,163,0.12))",
+    border: "1px solid rgba(255,255,255,0.12)",
+  },
+
+  sidebarFooter: { marginTop: "auto", paddingTop: "14px" },
+
+  smallMuted: { opacity: 0.65, fontSize: "12px" },
+
+  logoutBtnSide: {
+    marginTop: "14px",
+    padding: "10px 12px",
+    borderRadius: "12px",
+    border: "1px solid rgba(255,255,255,0.1)",
+    cursor: "pointer",
+    color: "white",
+    background: "rgba(255,255,255,0.06)",
+    fontWeight: 700,
+    fontSize: "13px",
+    width: "100%",
+  },
+
+  main: {
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "16px",
+    padding: "18px",
+    backdropFilter: "blur(10px)",
+  },
+
   topbar: {
     display: "flex",
     justifyContent: "space-between",
+    gap: "14px",
     alignItems: "center",
-    gap: "16px",
     flexWrap: "wrap",
     marginBottom: "16px",
   },
-  title: {
-    margin: 0,
-    fontSize: "34px",
-    fontWeight: 800,
-  },
-  subtitle: {
-    margin: "8px 0 0",
-    color: "rgba(255,255,255,.72)",
-  },
-  topActions: {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-  },
+
+  h1: { fontSize: "24px", fontWeight: 800 },
+
+  muted: { opacity: 0.75, fontSize: "13px", marginTop: "4px" },
+
+  topButtons: { display: "flex", gap: "10px", flexWrap: "wrap" },
+
   primaryBtn: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    textDecoration: "none",
-    padding: "12px 14px",
+    padding: "10px 14px",
     borderRadius: "12px",
+    border: "none",
+    cursor: "pointer",
     color: "white",
     background: "linear-gradient(90deg,#7b2ff7,#f107a3)",
     fontWeight: 700,
-    fontSize: "14px",
-  },
-  secondaryBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
+    fontSize: "13px",
     textDecoration: "none",
-    padding: "12px 14px",
+  },
+
+  secondaryBtn: {
+    padding: "10px 14px",
     borderRadius: "12px",
+    border: "1px solid rgba(255,255,255,0.1)",
     color: "white",
     background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.1)",
     fontWeight: 700,
-    fontSize: "14px",
+    fontSize: "13px",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
   },
+
+  alert: {
+    marginBottom: 16,
+    padding: "12px 14px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,.12)",
+    background: "rgba(255,70,70,.10)",
+    color: "#ffb4b4",
+  },
+
   infoBar: {
     display: "flex",
     justifyContent: "space-between",
@@ -258,83 +420,94 @@ const styles = {
     background: "rgba(255,255,255,0.04)",
     border: "1px solid rgba(255,255,255,0.08)",
   },
-  errorBox: {
-    marginBottom: "14px",
-    padding: "12px 14px",
-    borderRadius: "14px",
-    background: "rgba(255,70,70,.10)",
-    border: "1px solid rgba(255,255,255,.10)",
-    color: "#ffb4b4",
-  },
-  tableCard: {
-    background: "rgba(255,255,255,0.04)",
+
+  emptyCard: {
+    padding: "24px",
+    borderRadius: "16px",
     border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: "18px",
-    overflow: "hidden",
-    backdropFilter: "blur(10px)",
+    background: "rgba(0,0,0,0.22)",
+    display: "grid",
+    gap: "12px",
+    justifyItems: "start",
   },
+
+  emptyTitle: {
+    fontSize: "20px",
+    fontWeight: 800,
+  },
+
+  emptyText: {
+    opacity: 0.78,
+    fontSize: "14px",
+  },
+
   tableWrap: {
-    width: "100%",
     overflowX: "auto",
+    borderRadius: "16px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(0,0,0,0.18)",
   },
+
   table: {
     width: "100%",
     borderCollapse: "collapse",
     minWidth: "980px",
   },
+
   th: {
     textAlign: "left",
-    padding: "16px 14px",
+    padding: "14px 12px",
     fontSize: "12px",
-    color: "rgba(255,255,255,.70)",
+    fontWeight: 800,
+    opacity: 0.78,
     borderBottom: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.03)",
-    whiteSpace: "nowrap",
   },
+
   tr: {
     borderBottom: "1px solid rgba(255,255,255,0.06)",
   },
+
   td: {
-    padding: "16px 14px",
+    padding: "14px 12px",
     fontSize: "14px",
-    color: "white",
     verticalAlign: "middle",
   },
+
   refBadge: {
     display: "inline-flex",
     alignItems: "center",
-    padding: "8px 10px",
+    justifyContent: "center",
+    padding: "8px 12px",
     borderRadius: "999px",
-    background: "rgba(123,47,247,0.18)",
-    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(123,47,247,0.22)",
+    border: "1px solid rgba(255,255,255,0.08)",
     fontWeight: 700,
     fontSize: "12px",
   },
-  statusBadge: {
+
+  viewBtn: {
     display: "inline-flex",
     alignItems: "center",
-    padding: "7px 10px",
-    borderRadius: "999px",
+    justifyContent: "center",
+    padding: "8px 12px",
+    borderRadius: "10px",
+    background: "linear-gradient(90deg,#7b2ff7,#f107a3)",
+    color: "#fff",
+    textDecoration: "none",
     fontWeight: 700,
     fontSize: "12px",
-    textTransform: "capitalize",
-    border: "1px solid rgba(255,255,255,.08)",
   },
-  statusDraft: {
-    background: "rgba(255,255,255,.06)",
-    color: "#f4f4f6",
-  },
-  statusSent: {
-    background: "rgba(65,125,255,.15)",
-    color: "#b9d3ff",
-  },
-  statusConfirmed: {
-    background: "rgba(0,200,120,.14)",
-    color: "#b9ffd9",
-  },
-  emptyState: {
-    padding: "40px 20px",
-    textAlign: "center",
-    color: "rgba(255,255,255,.72)",
+
+  loadingWrap: {
+    minHeight: "100vh",
+    display: "grid",
+    placeItems: "center",
+    background:
+      "radial-gradient(1200px 700px at 15% 20%, rgba(123,47,247,0.35), transparent 55%), radial-gradient(900px 600px at 85% 30%, rgba(241,7,163,0.25), transparent 55%), radial-gradient(700px 500px at 50% 95%, rgba(0,255,200,0.10), transparent 60%), #070712",
+    color: "white",
+    fontFamily:
+      "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
+    padding: "24px",
   },
 };
