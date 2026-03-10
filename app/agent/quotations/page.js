@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
+
 export default function SavedQuotationsPage() {
   const router = useRouter();
 
@@ -64,11 +65,7 @@ export default function SavedQuotationsPage() {
   }
 
   if (checking || loading) {
-    return (
-      <div style={styles.loadingWrap}>
-        Loading saved quotations...
-      </div>
-    );
+    return <div style={styles.loadingWrap}>Loading saved quotations...</div>;
   }
 
   return (
@@ -162,7 +159,7 @@ export default function SavedQuotationsPage() {
                     <th style={styles.th}>Total Price</th>
                     <th style={styles.th}>Status</th>
                     <th style={styles.th}>Created</th>
-                    <th style={styles.th}>Action</th>
+                    <th style={styles.th}>Actions</th>
                   </tr>
                 </thead>
 
@@ -190,12 +187,21 @@ export default function SavedQuotationsPage() {
                       <td style={styles.td}>{formatDate(item.created_at)}</td>
 
                       <td style={styles.td}>
-                        <Link
-                          href={`/agent/quotations/${item.id}`}
-                          style={styles.viewBtn}
-                        >
-                          View
-                        </Link>
+                        <div style={styles.actionGroup}>
+                          <Link
+                            href={`/agent/quotations/${item.id}`}
+                            style={styles.viewBtn}
+                          >
+                            View
+                          </Link>
+
+                          <Link
+                            href={`/agent/quotations/${item.id}/edit`}
+                            style={styles.editBtn}
+                          >
+                            Edit
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -450,7 +456,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "980px",
+    minWidth: "1080px",
   },
 
   th: {
@@ -485,6 +491,13 @@ const styles = {
     fontSize: "12px",
   },
 
+  actionGroup: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
   viewBtn: {
     display: "inline-flex",
     alignItems: "center",
@@ -492,6 +505,20 @@ const styles = {
     padding: "8px 12px",
     borderRadius: "10px",
     background: "linear-gradient(90deg,#7b2ff7,#f107a3)",
+    color: "#fff",
+    textDecoration: "none",
+    fontWeight: 700,
+    fontSize: "12px",
+  },
+
+  editBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "8px 12px",
+    borderRadius: "10px",
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.1)",
     color: "#fff",
     textDecoration: "none",
     fontWeight: 700,
