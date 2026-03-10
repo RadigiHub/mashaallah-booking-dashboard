@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "../../../../../lib/supabaseClient";
+import { supabase } from "../../../../lib/supabaseClient";
 
 export default function EditQuotationPage() {
   const router = useRouter();
