@@ -128,11 +128,7 @@ export default function QuotationDetailPage() {
   }
 
   if (checking || loading) {
-    return (
-      <div style={styles.loadingWrap}>
-        Loading quotation...
-      </div>
-    );
+    return <div style={styles.loadingWrap}>Loading quotation...</div>;
   }
 
   if (!quote) {
@@ -162,8 +158,13 @@ export default function QuotationDetailPage() {
 
           <div style={styles.navTitle}>Navigation</div>
           <div style={styles.nav}>
-            <Link href="/agent/dashboard" style={styles.navItem}>Dashboard</Link>
-            <Link href="/agent/quotations" style={{ ...styles.navItem, ...styles.navItemActive }}>
+            <Link href="/agent/dashboard" style={styles.navItem}>
+              Dashboard
+            </Link>
+            <Link
+              href="/agent/quotations"
+              style={{ ...styles.navItem, ...styles.navItemActive }}
+            >
               Quotations
             </Link>
             <div style={styles.navItem}>Packages</div>
@@ -194,6 +195,13 @@ export default function QuotationDetailPage() {
               <button style={styles.primaryBtn} onClick={handleCopyWhatsapp}>
                 Copy WhatsApp Summary
               </button>
+
+              <Link
+                href={`/agent/quotations/${quotationId}/edit`}
+                style={styles.secondaryBtn}
+              >
+                Edit Quotation
+              </Link>
 
               <Link href="/agent/quotations" style={styles.secondaryBtn}>
                 ← Back to Saved Quotations
