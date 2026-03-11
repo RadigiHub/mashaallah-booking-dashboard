@@ -15,6 +15,7 @@ export default function QuotationDetailPage() {
   const [quote, setQuote] = useState(null);
   const [agentName, setAgentName] = useState("Agent");
   const [msg, setMsg] = useState("");
+  const [archiving, setArchiving] = useState(false);
 
   useEffect(() => {
     async function loadPage() {
@@ -49,7 +50,7 @@ export default function QuotationDetailPage() {
         .eq("id", quotationId)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error || !data || data.is_archived === true) {
         setMsg("Quotation not found.");
         setLoading(false);
         return;
@@ -127,6 +128,27 @@ export default function QuotationDetailPage() {
     }
   }
 
+  async function handleArchive() {
+    const ok = window.confirm("Archive this quotation?");
+    if (!ok) return;
+
+    setArchiving(true);
+    setMsg("");
+
+    const { error } = await supabase
+      .from("quotations")
+      .update({ is_archived: true })
+      .eq("id", quotationId);
+
+    if (error) {
+      setMsg("Failed to archive quotation.");
+      setArchiving(false);
+      return;
+    }
+
+    router.push("/agent/quotations");
+  }
+
   if (checking || loading) {
     return <div style={styles.loadingWrap}>Loading quotation...</div>;
   }
@@ -202,6 +224,15 @@ export default function QuotationDetailPage() {
               >
                 Edit Quotation
               </Link>
+
+              <button
+                type="button"
+                style={styles.archiveBtn}
+                onClick={handleArchive}
+                disabled={archiving}
+              >
+                {archiving ? "Archiving..." : "Archive"}
+              </button>
 
               <Link href="/agent/quotations" style={styles.secondaryBtn}>
                 ← Back to Saved Quotations
@@ -475,6 +506,16 @@ const styles = {
     textDecoration: "none",
     display: "inline-flex",
     alignItems: "center",
+  },
+  archiveBtn: {
+    padding: "10px 14px",
+    borderRadius: "12px",
+    border: "1px solid rgba(255,120,120,0.20)",
+    color: "#ffd2d2",
+    background: "rgba(255,80,80,0.12)",
+    fontWeight: 700,
+    fontSize: "13px",
+    cursor: "pointer",
   },
   alert: {
     marginBottom: 16,
