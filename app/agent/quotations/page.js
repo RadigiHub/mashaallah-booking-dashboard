@@ -13,55 +13,80 @@ export default function SavedQuotationsPage() {
   const [agentName, setAgentName] = useState("Agent");
   const [quotes, setQuotes] = useState([]);
   const [msg, setMsg] = useState("");
+  const [archivingId, setArchivingId] = useState("");
 
   useEffect(() => {
-    async function loadPage() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData?.session;
-
-      if (!session?.user?.email) {
-        router.replace("/agent/login");
-        return;
-      }
-
-      const userEmail = session.user.email;
-
-      const { data: agentRow, error: agentError } = await supabase
-        .from("agents")
-        .select("full_name, role, is_active, email")
-        .ilike("email", userEmail)
-        .maybeSingle();
-
-      if (agentError || !agentRow || agentRow.is_active === false) {
-        await supabase.auth.signOut();
-        router.replace("/agent/login");
-        return;
-      }
-
-      setAgentName(agentRow.full_name || "Agent");
-      setChecking(false);
-
-      const { data, error } = await supabase
-        .from("quotations")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        setMsg("Failed to load quotations.");
-        setLoading(false);
-        return;
-      }
-
-      setQuotes(data || []);
-      setLoading(false);
-    }
-
     loadPage();
   }, [router]);
+
+  async function loadPage() {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData?.session;
+
+    if (!session?.user?.email) {
+      router.replace("/agent/login");
+      return;
+    }
+
+    const userEmail = session.user.email;
+
+    const { data: agentRow, error: agentError } = await supabase
+      .from("agents")
+      .select("full_name, role, is_active, email")
+      .ilike("email", userEmail)
+      .maybeSingle();
+
+    if (agentError || !agentRow || agentRow.is_active === false) {
+      await supabase.auth.signOut();
+      router.replace("/agent/login");
+      return;
+    }
+
+    setAgentName(agentRow.full_name || "Agent");
+    setChecking(false);
+
+    const { data, error } = await supabase
+      .from("quotations")
+      .select("*")
+      .eq("is_archived", false)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setMsg("Failed to load quotations.");
+      setLoading(false);
+      return;
+    }
+
+    setQuotes(data || []);
+    setLoading(false);
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut();
     router.replace("/agent/login");
+  }
+
+  async function handleArchive(id) {
+    const ok = window.confirm("Archive this quotation?");
+    if (!ok) return;
+
+    setArchivingId(id);
+    setMsg("");
+
+    const { error } = await supabase
+      .from("quotations")
+      .update({ is_archived: true })
+      .eq("id", id);
+
+    if (error) {
+      setMsg("Failed to archive quotation.");
+      setArchivingId("");
+      return;
+    }
+
+    setQuotes((prev) => prev.filter((item) => item.id !== id));
+    setMsg("Quotation archived successfully.");
+    setArchivingId("");
   }
 
   if (checking || loading) {
@@ -109,7 +134,7 @@ export default function SavedQuotationsPage() {
             <div>
               <div style={styles.h1}>Saved Quotations</div>
               <div style={styles.muted}>
-                View all saved Umrah quotations created in the system.
+                View all active Umrah quotations created in the system.
               </div>
             </div>
 
@@ -137,13 +162,13 @@ export default function SavedQuotationsPage() {
 
           {quotes.length === 0 ? (
             <div style={styles.emptyCard}>
-              <div style={styles.emptyTitle}>No quotations yet</div>
+              <div style={styles.emptyTitle}>No active quotations</div>
               <div style={styles.emptyText}>
-                Abhi tak koi quotation save nahi hui.
+                Abhi koi active quotation available nahi hai.
               </div>
 
               <Link href="/agent/quotations/new" style={styles.primaryBtn}>
-                Create First Quotation
+                Create New Quotation
               </Link>
             </div>
           ) : (
@@ -201,6 +226,15 @@ export default function SavedQuotationsPage() {
                           >
                             Edit
                           </Link>
+
+                          <button
+                            type="button"
+                            style={styles.archiveBtn}
+                            onClick={() => handleArchive(item.id)}
+                            disabled={archivingId === item.id}
+                          >
+                            {archivingId === item.id ? "Archiving..." : "Archive"}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -281,7 +315,6 @@ const styles = {
     padding: "28px",
     boxSizing: "border-box",
   },
-
   shell: {
     maxWidth: "1280px",
     margin: "0 auto",
@@ -289,7 +322,6 @@ const styles = {
     gridTemplateColumns: "280px 1fr",
     gap: "18px",
   },
-
   sidebar: {
     background: "rgba(255,255,255,0.04)",
     border: "1px solid rgba(255,255,255,0.08)",
@@ -300,9 +332,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
   },
-
   brandRow: { display: "flex", gap: "12px", alignItems: "center" },
-
   logo: {
     width: "44px",
     height: "44px",
@@ -313,14 +343,10 @@ const styles = {
     justifyContent: "center",
     fontWeight: 800,
   },
-
   brand: { fontWeight: 700, fontSize: "14px" },
   sub: { opacity: 0.7, fontSize: "12px" },
-
   navTitle: { marginTop: "18px", opacity: 0.7, fontSize: "12px" },
-
   nav: { marginTop: "10px", display: "grid", gap: "8px" },
-
   navItem: {
     padding: "12px 12px",
     borderRadius: "12px",
@@ -330,17 +356,13 @@ const styles = {
     color: "white",
     textDecoration: "none",
   },
-
   navItemActive: {
     background:
       "linear-gradient(135deg, rgba(123,47,247,0.25), rgba(241,7,163,0.12))",
     border: "1px solid rgba(255,255,255,0.12)",
   },
-
   sidebarFooter: { marginTop: "auto", paddingTop: "14px" },
-
   smallMuted: { opacity: 0.65, fontSize: "12px" },
-
   logoutBtnSide: {
     marginTop: "14px",
     padding: "10px 12px",
@@ -353,7 +375,6 @@ const styles = {
     fontSize: "13px",
     width: "100%",
   },
-
   main: {
     background: "rgba(255,255,255,0.03)",
     border: "1px solid rgba(255,255,255,0.08)",
@@ -361,7 +382,6 @@ const styles = {
     padding: "18px",
     backdropFilter: "blur(10px)",
   },
-
   topbar: {
     display: "flex",
     justifyContent: "space-between",
@@ -370,13 +390,9 @@ const styles = {
     flexWrap: "wrap",
     marginBottom: "16px",
   },
-
   h1: { fontSize: "24px", fontWeight: 800 },
-
   muted: { opacity: 0.75, fontSize: "13px", marginTop: "4px" },
-
   topButtons: { display: "flex", gap: "10px", flexWrap: "wrap" },
-
   primaryBtn: {
     display: "inline-flex",
     alignItems: "center",
@@ -391,7 +407,6 @@ const styles = {
     fontSize: "13px",
     textDecoration: "none",
   },
-
   secondaryBtn: {
     padding: "10px 14px",
     borderRadius: "12px",
@@ -404,7 +419,6 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
   },
-
   alert: {
     marginBottom: 16,
     padding: "12px 14px",
@@ -413,7 +427,6 @@ const styles = {
     background: "rgba(255,70,70,.10)",
     color: "#ffb4b4",
   },
-
   infoBar: {
     display: "flex",
     justifyContent: "space-between",
@@ -425,7 +438,6 @@ const styles = {
     background: "rgba(255,255,255,0.04)",
     border: "1px solid rgba(255,255,255,0.08)",
   },
-
   emptyCard: {
     padding: "24px",
     borderRadius: "16px",
@@ -435,30 +447,25 @@ const styles = {
     gap: "12px",
     justifyItems: "start",
   },
-
   emptyTitle: {
     fontSize: "20px",
     fontWeight: 800,
   },
-
   emptyText: {
     opacity: 0.78,
     fontSize: "14px",
   },
-
   tableWrap: {
     overflowX: "auto",
     borderRadius: "16px",
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(0,0,0,0.18)",
   },
-
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "1080px",
+    minWidth: "1140px",
   },
-
   th: {
     textAlign: "left",
     padding: "14px 12px",
@@ -468,17 +475,14 @@ const styles = {
     borderBottom: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.03)",
   },
-
   tr: {
     borderBottom: "1px solid rgba(255,255,255,0.06)",
   },
-
   td: {
     padding: "14px 12px",
     fontSize: "14px",
     verticalAlign: "middle",
   },
-
   refBadge: {
     display: "inline-flex",
     alignItems: "center",
@@ -490,14 +494,12 @@ const styles = {
     fontWeight: 700,
     fontSize: "12px",
   },
-
   actionGroup: {
     display: "flex",
     gap: "8px",
     alignItems: "center",
     flexWrap: "wrap",
   },
-
   viewBtn: {
     display: "inline-flex",
     alignItems: "center",
@@ -509,8 +511,8 @@ const styles = {
     textDecoration: "none",
     fontWeight: 700,
     fontSize: "12px",
+    border: "none",
   },
-
   editBtn: {
     display: "inline-flex",
     alignItems: "center",
@@ -524,7 +526,20 @@ const styles = {
     fontWeight: 700,
     fontSize: "12px",
   },
-
+  archiveBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "8px 12px",
+    borderRadius: "10px",
+    background: "rgba(255,80,80,0.12)",
+    border: "1px solid rgba(255,120,120,0.22)",
+    color: "#ffcccc",
+    textDecoration: "none",
+    fontWeight: 700,
+    fontSize: "12px",
+    cursor: "pointer",
+  },
   loadingWrap: {
     minHeight: "100vh",
     display: "grid",
