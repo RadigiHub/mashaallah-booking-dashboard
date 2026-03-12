@@ -14,6 +14,7 @@ export default function SavedQuotationsPage() {
   const [quotes, setQuotes] = useState([]);
   const [msg, setMsg] = useState("");
   const [archivingId, setArchivingId] = useState("");
+  const [statusLoadingId, setStatusLoadingId] = useState("");
 
   useEffect(() => {
     loadPage();
@@ -87,6 +88,31 @@ export default function SavedQuotationsPage() {
     setQuotes((prev) => prev.filter((item) => item.id !== id));
     setMsg("Quotation archived successfully.");
     setArchivingId("");
+  }
+
+  async function handleStatusChange(id, newStatus) {
+    setStatusLoadingId(id);
+    setMsg("");
+
+    const { error } = await supabase
+      .from("quotations")
+      .update({ quotation_status: newStatus })
+      .eq("id", id);
+
+    if (error) {
+      setMsg("Failed to update status.");
+      setStatusLoadingId("");
+      return;
+    }
+
+    setQuotes((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, quotation_status: newStatus } : item
+      )
+    );
+
+    setMsg(`Quotation status updated to ${newStatus}.`);
+    setStatusLoadingId("");
   }
 
   if (checking || loading) {
@@ -204,9 +230,32 @@ export default function SavedQuotationsPage() {
                       <td style={styles.td}>{formatPrice(item.total_price)}</td>
 
                       <td style={styles.td}>
-                        <span style={statusBadgeStyle(item.quotation_status)}>
-                          {safe(item.quotation_status)}
-                        </span>
+                        <div style={styles.statusCell}>
+                          <span style={statusBadgeStyle(item.quotation_status)}>
+                            {safe(item.quotation_status)}
+                          </span>
+
+                          <div style={styles.selectWrapSmall}>
+                            <select
+                              value={item.quotation_status || "draft"}
+                              onChange={(e) =>
+                                handleStatusChange(item.id, e.target.value)
+                              }
+                              style={styles.selectSmall}
+                              disabled={statusLoadingId === item.id}
+                            >
+                              <option style={styles.option} value="draft">
+                                Draft
+                              </option>
+                              <option style={styles.option} value="sent">
+                                Sent
+                              </option>
+                              <option style={styles.option} value="confirmed">
+                                Confirmed
+                              </option>
+                            </select>
+                          </div>
+                        </div>
                       </td>
 
                       <td style={styles.td}>{formatDate(item.created_at)}</td>
@@ -277,6 +326,7 @@ function statusBadgeStyle(status) {
     fontWeight: 700,
     textTransform: "capitalize",
     border: "1px solid rgba(255,255,255,0.08)",
+    minWidth: "88px",
   };
 
   const s = String(status || "").toLowerCase();
@@ -424,8 +474,8 @@ const styles = {
     padding: "12px 14px",
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,.12)",
-    background: "rgba(255,70,70,.10)",
-    color: "#ffb4b4",
+    background: "rgba(0,200,120,.10)",
+    color: "#b9ffd9",
   },
   infoBar: {
     display: "flex",
@@ -464,7 +514,7 @@ const styles = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "1140px",
+    minWidth: "1220px",
   },
   th: {
     textAlign: "left",
@@ -493,6 +543,32 @@ const styles = {
     border: "1px solid rgba(255,255,255,0.08)",
     fontWeight: 700,
     fontSize: "12px",
+  },
+  statusCell: {
+    display: "grid",
+    gap: "8px",
+  },
+  selectWrapSmall: {
+    width: "120px",
+  },
+  selectSmall: {
+    width: "100%",
+    appearance: "none",
+    WebkitAppearance: "none",
+    MozAppearance: "none",
+    background: "rgba(255,255,255,.06)",
+    color: "#e9e9f2",
+    border: "1px solid rgba(255,255,255,.10)",
+    borderRadius: 10,
+    padding: "8px 10px",
+    outline: "none",
+    fontSize: 12,
+    boxSizing: "border-box",
+    cursor: "pointer",
+  },
+  option: {
+    backgroundColor: "#141421",
+    color: "#e9e9f2",
   },
   actionGroup: {
     display: "flex",
