@@ -71,10 +71,10 @@ export default function QuotationDetailPage() {
     router.replace("/agent/login");
   }
 
-  async function handleCopyWhatsapp() {
-    if (!quote) return;
+  function buildWhatsappText() {
+    if (!quote) return "";
 
-    const text = `
+    return `
 *MashaAllah Trips - Umrah Quotation*
 
 *Booking Ref:* ${safe(quote.booking_reference)}
@@ -118,6 +118,10 @@ export default function QuotationDetailPage() {
 
 *Notes:* ${safe(quote.notes)}
 `.trim();
+  }
+
+  async function handleCopyWhatsapp() {
+    const text = buildWhatsappText();
 
     try {
       await navigator.clipboard.writeText(text);
@@ -127,6 +131,23 @@ export default function QuotationDetailPage() {
       setMsg("Copy failed.");
       setTimeout(() => setMsg(""), 2500);
     }
+  }
+
+  function handleOpenWhatsapp() {
+    if (!quote) return;
+
+    const rawPhone = String(quote.client_phone || "").trim();
+    const cleanedPhone = rawPhone.replace(/[^\d]/g, "");
+
+    if (!cleanedPhone) {
+      setMsg("Client phone not found for WhatsApp.");
+      setTimeout(() => setMsg(""), 2500);
+      return;
+    }
+
+    const text = buildWhatsappText();
+    const url = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
   }
 
   async function handleArchive() {
@@ -237,6 +258,10 @@ export default function QuotationDetailPage() {
             <div style={styles.topButtons}>
               <button style={styles.primaryBtn} onClick={handleCopyWhatsapp}>
                 Copy WhatsApp Summary
+              </button>
+
+              <button style={styles.whatsappBtn} onClick={handleOpenWhatsapp}>
+                Open in WhatsApp
               </button>
 
               <Link
@@ -582,6 +607,16 @@ const styles = {
     cursor: "pointer",
     color: "white",
     background: "linear-gradient(90deg,#7b2ff7,#f107a3)",
+    fontWeight: 700,
+    fontSize: "13px",
+  },
+  whatsappBtn: {
+    padding: "10px 14px",
+    borderRadius: "12px",
+    border: "1px solid rgba(70,255,170,0.20)",
+    cursor: "pointer",
+    color: "#d7ffe8",
+    background: "rgba(20,180,90,0.16)",
     fontWeight: 700,
     fontSize: "13px",
   },
