@@ -13,8 +13,10 @@ export default function EditQuotationPage() {
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [agentEmail, setAgentEmail] = useState("");
   const [msg, setMsg] = useState({ type: "", text: "" });
 
+  // Client Details
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [clientEmail, setClientEmail] = useState("");
@@ -23,6 +25,7 @@ export default function EditQuotationPage() {
   const [infants, setInfants] = useState(0);
   const [departureCity, setDepartureCity] = useState("");
 
+  // Package Basics
   const [packageTitle, setPackageTitle] = useState("");
   const [destination, setDestination] = useState("Makkah / Madinah");
   const [travelDate, setTravelDate] = useState("");
@@ -30,13 +33,16 @@ export default function EditQuotationPage() {
   const [makkahNights, setMakkahNights] = useState("");
   const [madinahNights, setMadinahNights] = useState("");
   const [totalNights, setTotalNights] = useState("");
-  const [quotationStatus, setQuotationStatus] = useState("draft");
-
   const [visaIncluded, setVisaIncluded] = useState(false);
   const [transportIncluded, setTransportIncluded] = useState(false);
   const [ziyaratIncluded, setZiyaratIncluded] = useState(false);
   const [mealsIncluded, setMealsIncluded] = useState(false);
 
+  // PNR / Rendered Itinerary
+  const [pnrRaw, setPnrRaw] = useState("");
+  const [pnrRendered, setPnrRendered] = useState("");
+
+  // Hotel Details
   const [makkahHotelName, setMakkahHotelName] = useState("");
   const [makkahHotelRating, setMakkahHotelRating] = useState("");
   const [makkahRoomType, setMakkahRoomType] = useState("");
@@ -47,12 +53,14 @@ export default function EditQuotationPage() {
   const [madinahRoomType, setMadinahRoomType] = useState("");
   const [madinahDistance, setMadinahDistance] = useState("");
 
+  // Flight Details
   const [airline, setAirline] = useState("");
   const [outboundSector, setOutboundSector] = useState("");
   const [returnSector, setReturnSector] = useState("");
   const [baggage, setBaggage] = useState("");
   const [flightNotes, setFlightNotes] = useState("");
 
+  // Pricing
   const [hotelCost, setHotelCost] = useState("");
   const [flightCost, setFlightCost] = useState("");
   const [visaCost, setVisaCost] = useState("");
@@ -62,114 +70,114 @@ export default function EditQuotationPage() {
   const [agentProfit, setAgentProfit] = useState("");
   const [totalPrice, setTotalPrice] = useState("");
 
+  // Payment
   const [depositAmount, setDepositAmount] = useState("");
   const [remainingBalance, setRemainingBalance] = useState("");
   const [paymentPlan, setPaymentPlan] = useState("");
 
+  // Other
   const [notes, setNotes] = useState("");
+  const [quotationStatus, setQuotationStatus] = useState("draft");
   const [bookingReference, setBookingReference] = useState("");
 
   useEffect(() => {
-    async function loadPage() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData?.session;
+    async function loadQuotation() {
+      const { data } = await supabase.auth.getSession();
+      const session = data?.session;
 
       if (!session?.user?.email) {
         router.replace("/agent/login");
         return;
       }
 
-      const { data: agentRow, error: agentError } = await supabase
-        .from("agents")
-        .select("email, is_active")
-        .ilike("email", session.user.email)
-        .maybeSingle();
+      setAgentEmail(session.user.email);
 
-      if (agentError || !agentRow || agentRow.is_active === false) {
-        await supabase.auth.signOut();
-        router.replace("/agent/login");
-        return;
-      }
-
-      const { data, error } = await supabase
+      const { data: quote, error } = await supabase
         .from("quotations")
         .select("*")
         .eq("id", quotationId)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error || !quote || quote.is_archived === true) {
         setMsg({ type: "error", text: "Quotation not found." });
         setChecking(false);
         setLoading(false);
         return;
       }
 
-      setClientName(data.client_name || "");
-      setClientPhone(data.client_phone || "");
-      setClientEmail(data.client_email || "");
-      setAdults(data.adults ?? 1);
-      setChildren(data.children ?? 0);
-      setInfants(data.infants ?? 0);
-      setDepartureCity(data.departure_city || "");
+      setClientName(quote.client_name || "");
+      setClientPhone(quote.client_phone || "");
+      setClientEmail(quote.client_email || "");
+      setAdults(quote.adults ?? 1);
+      setChildren(quote.children ?? 0);
+      setInfants(quote.infants ?? 0);
+      setDepartureCity(quote.departure_city || "");
 
-      setPackageTitle(data.package_title || "");
-      setDestination(data.destination || "Makkah / Madinah");
-      setTravelDate(data.travel_date || "");
-      setUmrahType(data.umrah_type || "");
-      setMakkahNights(data.makkah_nights ?? "");
-      setMadinahNights(data.madinah_nights ?? "");
-      setTotalNights(data.total_nights ?? "");
-      setQuotationStatus(data.quotation_status || "draft");
+      setPackageTitle(quote.package_title || "");
+      setDestination(quote.destination || "Makkah / Madinah");
+      setTravelDate(quote.travel_date || "");
+      setUmrahType(quote.umrah_type || "");
+      setMakkahNights(toInputValue(quote.makkah_nights));
+      setMadinahNights(toInputValue(quote.madinah_nights));
+      setTotalNights(toInputValue(quote.total_nights));
 
-      setVisaIncluded(!!data.visa_included);
-      setTransportIncluded(!!data.transport_included);
-      setZiyaratIncluded(!!data.ziyarat_included);
-      setMealsIncluded(!!data.meals_included);
+      setVisaIncluded(Boolean(quote.visa_included));
+      setTransportIncluded(Boolean(quote.transport_included));
+      setZiyaratIncluded(Boolean(quote.ziyarat_included));
+      setMealsIncluded(Boolean(quote.meals_included));
 
-      setMakkahHotelName(data.makkah_hotel_name || "");
-      setMakkahHotelRating(data.makkah_hotel_rating || "");
-      setMakkahRoomType(data.makkah_room_type || "");
-      setMakkahDistance(data.makkah_distance || "");
+      setPnrRaw(quote.pnr_raw || "");
+      setPnrRendered(quote.pnr_rendered || "");
 
-      setMadinahHotelName(data.madinah_hotel_name || "");
-      setMadinahHotelRating(data.madinah_hotel_rating || "");
-      setMadinahRoomType(data.madinah_room_type || "");
-      setMadinahDistance(data.madinah_distance || "");
+      setMakkahHotelName(quote.makkah_hotel_name || "");
+      setMakkahHotelRating(quote.makkah_hotel_rating || "");
+      setMakkahRoomType(quote.makkah_room_type || "");
+      setMakkahDistance(quote.makkah_distance || "");
 
-      setAirline(data.airline || "");
-      setOutboundSector(data.outbound_sector || "");
-      setReturnSector(data.return_sector || "");
-      setBaggage(data.baggage || "");
-      setFlightNotes(data.flight_notes || "");
+      setMadinahHotelName(quote.madinah_hotel_name || "");
+      setMadinahHotelRating(quote.madinah_hotel_rating || "");
+      setMadinahRoomType(quote.madinah_room_type || "");
+      setMadinahDistance(quote.madinah_distance || "");
 
-      setHotelCost(data.hotel_cost || "");
-      setFlightCost(data.flight_cost || "");
-      setVisaCost(data.visa_cost || "");
-      setTransportCost(data.transport_cost || "");
-      setZiyaratCost(data.ziyarat_cost || "");
-      setOtherCost(data.other_cost || "");
-      setAgentProfit(data.agent_profit || "");
-      setTotalPrice(data.total_price || "");
+      setAirline(quote.airline || "");
+      setOutboundSector(quote.outbound_sector || "");
+      setReturnSector(quote.return_sector || "");
+      setBaggage(quote.baggage || "");
+      setFlightNotes(quote.flight_notes || "");
 
-      setDepositAmount(data.deposit_amount || "");
-      setRemainingBalance(data.remaining_balance || "");
-      setPaymentPlan(data.payment_plan || "");
+      setHotelCost(toInputValue(quote.hotel_cost));
+      setFlightCost(toInputValue(quote.flight_cost));
+      setVisaCost(toInputValue(quote.visa_cost));
+      setTransportCost(toInputValue(quote.transport_cost));
+      setZiyaratCost(toInputValue(quote.ziyarat_cost));
+      setOtherCost(toInputValue(quote.other_cost));
+      setAgentProfit(toInputValue(quote.agent_profit));
+      setTotalPrice(toInputValue(quote.total_price));
 
-      setNotes(data.notes || "");
-      setBookingReference(data.booking_reference || "");
+      setDepositAmount(toInputValue(quote.deposit_amount));
+      setRemainingBalance(toInputValue(quote.remaining_balance));
+      setPaymentPlan(quote.payment_plan || "");
+
+      setNotes(quote.notes || "");
+      setQuotationStatus(quote.quotation_status || "draft");
+      setBookingReference(quote.booking_reference || "");
 
       setChecking(false);
       setLoading(false);
     }
 
-    if (quotationId) loadPage();
+    if (quotationId) {
+      loadQuotation();
+    }
   }, [quotationId, router]);
 
   useEffect(() => {
     const mk = Number(makkahNights || 0);
     const md = Number(madinahNights || 0);
     const total = mk + md;
-    if (total > 0) setTotalNights(String(total));
+    if (total > 0) {
+      setTotalNights(String(total));
+    }
   }, [makkahNights, madinahNights]);
 
   useEffect(() => {
@@ -182,7 +190,9 @@ export default function EditQuotationPage() {
       Number(otherCost || 0) +
       Number(agentProfit || 0);
 
-    if (calc > 0) setTotalPrice(String(calc));
+    if (calc > 0) {
+      setTotalPrice(String(calc));
+    }
   }, [
     hotelCost,
     flightCost,
@@ -196,6 +206,7 @@ export default function EditQuotationPage() {
   useEffect(() => {
     const total = Number(totalPrice || 0);
     const deposit = Number(depositAmount || 0);
+
     if (total >= 0 && deposit >= 0) {
       setRemainingBalance(String(Math.max(total - deposit, 0)));
     }
@@ -212,88 +223,90 @@ export default function EditQuotationPage() {
     );
   }, [clientName, clientPhone, destination, travelDate, totalPrice, saving]);
 
-  async function handleUpdate(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setMsg({ type: "", text: "" });
     setSaving(true);
 
-    try {
-      const payload = {
-        client_name: clientName,
-        client_phone: clientPhone,
-        client_email: clientEmail,
-        adults: Number(adults || 0),
-        children: Number(children || 0),
-        infants: Number(infants || 0),
-        departure_city: departureCity,
+    const payload = {
+      client_name: clientName,
+      client_phone: clientPhone,
+      client_email: clientEmail,
+      adults: Number(adults || 0),
+      children: Number(children || 0),
+      infants: Number(infants || 0),
+      departure_city: departureCity,
 
-        package_title: packageTitle,
-        destination,
-        travel_date: travelDate,
-        umrah_type: umrahType,
-        makkah_nights: makkahNights ? Number(makkahNights) : null,
-        madinah_nights: madinahNights ? Number(madinahNights) : null,
-        total_nights: totalNights ? Number(totalNights) : null,
+      package_title: packageTitle,
+      destination: destination,
+      travel_date: travelDate,
+      umrah_type: umrahType,
+      makkah_nights: makkahNights ? Number(makkahNights) : null,
+      madinah_nights: madinahNights ? Number(madinahNights) : null,
+      total_nights: totalNights ? Number(totalNights) : null,
 
-        visa_included: visaIncluded,
-        transport_included: transportIncluded,
-        ziyarat_included: ziyaratIncluded,
-        meals_included: mealsIncluded,
+      visa_included: visaIncluded,
+      transport_included: transportIncluded,
+      ziyarat_included: ziyaratIncluded,
+      meals_included: mealsIncluded,
 
-        makkah_hotel_name: makkahHotelName,
-        makkah_hotel_rating: makkahHotelRating,
-        makkah_room_type: makkahRoomType,
-        makkah_distance: makkahDistance,
+      pnr_raw: pnrRaw,
+      pnr_rendered: pnrRendered,
 
-        madinah_hotel_name: madinahHotelName,
-        madinah_hotel_rating: madinahHotelRating,
-        madinah_room_type: madinahRoomType,
-        madinah_distance: madinahDistance,
+      makkah_hotel_name: makkahHotelName,
+      makkah_hotel_rating: makkahHotelRating,
+      makkah_room_type: makkahRoomType,
+      makkah_distance: makkahDistance,
 
-        airline,
-        outbound_sector: outboundSector,
-        return_sector: returnSector,
-        baggage,
-        flight_notes: flightNotes,
+      madinah_hotel_name: madinahHotelName,
+      madinah_hotel_rating: madinahHotelRating,
+      madinah_room_type: madinahRoomType,
+      madinah_distance: madinahDistance,
 
-        hotel_cost: hotelCost,
-        flight_cost: flightCost,
-        visa_cost: visaCost,
-        transport_cost: transportCost,
-        ziyarat_cost: ziyaratCost,
-        other_cost: otherCost,
-        agent_profit: agentProfit,
-        total_price: totalPrice,
+      airline: airline,
+      outbound_sector: outboundSector,
+      return_sector: returnSector,
+      baggage: baggage,
+      flight_notes: flightNotes,
 
-        deposit_amount: depositAmount,
-        remaining_balance: remainingBalance,
-        payment_plan: paymentPlan,
+      hotel_cost: hotelCost,
+      flight_cost: flightCost,
+      visa_cost: visaCost,
+      transport_cost: transportCost,
+      ziyarat_cost: ziyaratCost,
+      other_cost: otherCost,
+      agent_profit: agentProfit,
+      total_price: totalPrice,
 
-        notes,
-        booking_reference: bookingReference,
-        quotation_status: quotationStatus,
-      };
+      deposit_amount: depositAmount,
+      remaining_balance: remainingBalance,
+      payment_plan: paymentPlan,
 
-      const { error } = await supabase
-        .from("quotations")
-        .update(payload)
-        .eq("id", quotationId);
+      notes: notes,
+      booking_reference: bookingReference,
+      quotation_status: quotationStatus,
+      created_by: agentEmail,
+    };
 
-      if (error) {
-        setMsg({ type: "error", text: error.message || "Update failed." });
-        setSaving(false);
-        return;
-      }
+    const { error } = await supabase
+      .from("quotations")
+      .update(payload)
+      .eq("id", quotationId);
 
-      router.push(`/agent/quotations/${quotationId}`);
-    } catch (err) {
-      setMsg({ type: "error", text: "Something went wrong while updating." });
+    if (error) {
+      setMsg({
+        type: "error",
+        text: error.message || "Failed to update quotation.",
+      });
       setSaving(false);
+      return;
     }
+
+    router.push(`/agent/quotations/${quotationId}`);
   }
 
   if (checking || loading) {
-    return <div style={styles.loadingWrap}>Loading quotation...</div>;
+    return <div style={styles.loadingWrap}>Loading quotation for edit...</div>;
   }
 
   return (
@@ -304,13 +317,13 @@ export default function EditQuotationPage() {
       <div className="card" style={{ width: "100%", maxWidth: 1100 }}>
         <div style={styles.topbar}>
           <div>
-            <h1 style={styles.title}>Edit Quotation</h1>
+            <h1 style={styles.title}>Edit Umrah Quotation</h1>
             <p style={styles.subtitle}>
-              Update client, package, flight, hotel and pricing details.
+              Update package, hotels, flights, pricing, payment and notes.
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={styles.topButtons}>
             <Link href={`/agent/quotations/${quotationId}`} className="btn">
               ← Back to Detail
             </Link>
@@ -338,42 +351,83 @@ export default function EditQuotationPage() {
           </div>
         ) : null}
 
-        <form onSubmit={handleUpdate}>
+        <form onSubmit={handleSubmit}>
           <SectionTitle title="Client Details" />
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Client Name">
-              <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} required />
+              <input
+                className="input"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="Client full name"
+                required
+              />
             </Field>
             <Field label="Client Phone">
-              <input className="input" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} required />
+              <input
+                className="input"
+                value={clientPhone}
+                onChange={(e) => setClientPhone(e.target.value)}
+                placeholder="+44..."
+                required
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Client Email">
-              <input className="input" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} />
+              <input
+                className="input"
+                value={clientEmail}
+                onChange={(e) => setClientEmail(e.target.value)}
+                placeholder="client@email.com"
+              />
             </Field>
             <Field label="Departure City">
-              <input className="input" value={departureCity} onChange={(e) => setDepartureCity(e.target.value)} />
+              <input
+                className="input"
+                value={departureCity}
+                onChange={(e) => setDepartureCity(e.target.value)}
+                placeholder="London / Manchester"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 18 }}>
             <Field label="Adults">
-              <input className="input" type="number" value={adults} onChange={(e) => setAdults(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={adults}
+                onChange={(e) => setAdults(e.target.value)}
+              />
             </Field>
             <Field label="Children">
-              <input className="input" type="number" value={children} onChange={(e) => setChildren(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={children}
+                onChange={(e) => setChildren(e.target.value)}
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 24 }}>
             <Field label="Infants">
-              <input className="input" type="number" value={infants} onChange={(e) => setInfants(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={infants}
+                onChange={(e) => setInfants(e.target.value)}
+              />
             </Field>
             <Field label="Booking Reference">
-              <input className="input" value={bookingReference} onChange={(e) => setBookingReference(e.target.value)} />
+              <input
+                className="input"
+                value={bookingReference}
+                onChange={(e) => setBookingReference(e.target.value)}
+              />
             </Field>
           </div>
 
@@ -381,28 +435,60 @@ export default function EditQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Package Title">
-              <input className="input" value={packageTitle} onChange={(e) => setPackageTitle(e.target.value)} />
+              <input
+                className="input"
+                value={packageTitle}
+                onChange={(e) => setPackageTitle(e.target.value)}
+                placeholder="5-Star Umrah with Flights"
+              />
             </Field>
             <Field label="Umrah Type">
-              <input className="input" value={umrahType} onChange={(e) => setUmrahType(e.target.value)} />
+              <input
+                className="input"
+                value={umrahType}
+                onChange={(e) => setUmrahType(e.target.value)}
+                placeholder="Ramadan / Standard / Family"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Destination">
-              <input className="input" value={destination} onChange={(e) => setDestination(e.target.value)} required />
+              <input
+                className="input"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder="Makkah / Madinah"
+                required
+              />
             </Field>
             <Field label="Travel Date">
-              <input className="input" value={travelDate} onChange={(e) => setTravelDate(e.target.value)} required />
+              <input
+                className="input"
+                value={travelDate}
+                onChange={(e) => setTravelDate(e.target.value)}
+                placeholder="2026-03-20"
+                required
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 18 }}>
             <Field label="Makkah Nights">
-              <input className="input" type="number" value={makkahNights} onChange={(e) => setMakkahNights(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={makkahNights}
+                onChange={(e) => setMakkahNights(e.target.value)}
+              />
             </Field>
             <Field label="Madinah Nights">
-              <input className="input" type="number" value={madinahNights} onChange={(e) => setMadinahNights(e.target.value)} />
+              <input
+                className="input"
+                type="number"
+                value={madinahNights}
+                onChange={(e) => setMadinahNights(e.target.value)}
+              />
             </Field>
           </div>
 
@@ -411,63 +497,151 @@ export default function EditQuotationPage() {
               <input className="input" value={totalNights} readOnly />
             </Field>
             <Field label="Quotation Status">
-              <div style={styles.selectWrap}>
-                <select
-                  value={quotationStatus}
-                  onChange={(e) => setQuotationStatus(e.target.value)}
-                  style={styles.select}
-                >
-                  <option style={styles.option} value="draft">Draft</option>
-                  <option style={styles.option} value="sent">Sent</option>
-                  <option style={styles.option} value="confirmed">Confirmed</option>
-                </select>
-                <span style={styles.selectArrow}>⌄</span>
-              </div>
+              <select
+                className="input"
+                value={quotationStatus}
+                onChange={(e) => setQuotationStatus(e.target.value)}
+                style={styles.darkSelect}
+              >
+                <option style={styles.optionDark} value="draft">
+                  Draft
+                </option>
+                <option style={styles.optionDark} value="sent">
+                  Sent
+                </option>
+                <option style={styles.optionDark} value="confirmed">
+                  Confirmed
+                </option>
+              </select>
             </Field>
           </div>
 
           <div style={checkboxWrap}>
-            <CheckItem label="Visa Included" checked={visaIncluded} onChange={setVisaIncluded} />
-            <CheckItem label="Transport Included" checked={transportIncluded} onChange={setTransportIncluded} />
-            <CheckItem label="Ziyarat Included" checked={ziyaratIncluded} onChange={setZiyaratIncluded} />
-            <CheckItem label="Meals Included" checked={mealsIncluded} onChange={setMealsIncluded} />
+            <CheckItem
+              label="Visa Included"
+              checked={visaIncluded}
+              onChange={setVisaIncluded}
+            />
+            <CheckItem
+              label="Transport Included"
+              checked={transportIncluded}
+              onChange={setTransportIncluded}
+            />
+            <CheckItem
+              label="Ziyarat Included"
+              checked={ziyaratIncluded}
+              onChange={setZiyaratIncluded}
+            />
+            <CheckItem
+              label="Meals Included"
+              checked={mealsIncluded}
+              onChange={setMealsIncluded}
+            />
+          </div>
+
+          <SectionTitle title="PNR / Itinerary Data" />
+
+          <div style={{ marginBottom: 14 }}>
+            <Field label="Raw PNR">
+              <textarea
+                className="input"
+                rows={6}
+                value={pnrRaw}
+                onChange={(e) => setPnrRaw(e.target.value)}
+                placeholder="Paste raw PNR here"
+                style={styles.textarea}
+              />
+            </Field>
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <Field label="Rendered / Converted Itinerary">
+              <textarea
+                className="input"
+                rows={6}
+                value={pnrRendered}
+                onChange={(e) => setPnrRendered(e.target.value)}
+                placeholder="Paste converted readable itinerary here"
+                style={styles.textarea}
+              />
+            </Field>
           </div>
 
           <SectionTitle title="Hotel Details" />
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Makkah Hotel Name">
-              <input className="input" value={makkahHotelName} onChange={(e) => setMakkahHotelName(e.target.value)} />
+              <input
+                className="input"
+                value={makkahHotelName}
+                onChange={(e) => setMakkahHotelName(e.target.value)}
+                placeholder="Swissotel / Pullman..."
+              />
             </Field>
             <Field label="Makkah Hotel Rating">
-              <input className="input" value={makkahHotelRating} onChange={(e) => setMakkahHotelRating(e.target.value)} />
+              <input
+                className="input"
+                value={makkahHotelRating}
+                onChange={(e) => setMakkahHotelRating(e.target.value)}
+                placeholder="5 Star"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Makkah Room Type">
-              <input className="input" value={makkahRoomType} onChange={(e) => setMakkahRoomType(e.target.value)} />
+              <input
+                className="input"
+                value={makkahRoomType}
+                onChange={(e) => setMakkahRoomType(e.target.value)}
+                placeholder="Quad / Triple / Double"
+              />
             </Field>
             <Field label="Makkah Distance">
-              <input className="input" value={makkahDistance} onChange={(e) => setMakkahDistance(e.target.value)} />
+              <input
+                className="input"
+                value={makkahDistance}
+                onChange={(e) => setMakkahDistance(e.target.value)}
+                placeholder="200m from Haram"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Madinah Hotel Name">
-              <input className="input" value={madinahHotelName} onChange={(e) => setMadinahHotelName(e.target.value)} />
+              <input
+                className="input"
+                value={madinahHotelName}
+                onChange={(e) => setMadinahHotelName(e.target.value)}
+                placeholder="Anwar Al Madinah..."
+              />
             </Field>
             <Field label="Madinah Hotel Rating">
-              <input className="input" value={madinahHotelRating} onChange={(e) => setMadinahHotelRating(e.target.value)} />
+              <input
+                className="input"
+                value={madinahHotelRating}
+                onChange={(e) => setMadinahHotelRating(e.target.value)}
+                placeholder="5 Star"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 24 }}>
             <Field label="Madinah Room Type">
-              <input className="input" value={madinahRoomType} onChange={(e) => setMadinahRoomType(e.target.value)} />
+              <input
+                className="input"
+                value={madinahRoomType}
+                onChange={(e) => setMadinahRoomType(e.target.value)}
+                placeholder="Quad / Triple / Double"
+              />
             </Field>
             <Field label="Madinah Distance">
-              <input className="input" value={madinahDistance} onChange={(e) => setMadinahDistance(e.target.value)} />
+              <input
+                className="input"
+                value={madinahDistance}
+                onChange={(e) => setMadinahDistance(e.target.value)}
+                placeholder="150m from Masjid Nabawi"
+              />
             </Field>
           </div>
 
@@ -475,25 +649,52 @@ export default function EditQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Airline">
-              <input className="input" value={airline} onChange={(e) => setAirline(e.target.value)} />
+              <input
+                className="input"
+                value={airline}
+                onChange={(e) => setAirline(e.target.value)}
+                placeholder="Saudi / Qatar / Turkish"
+              />
             </Field>
             <Field label="Baggage">
-              <input className="input" value={baggage} onChange={(e) => setBaggage(e.target.value)} />
+              <input
+                className="input"
+                value={baggage}
+                onChange={(e) => setBaggage(e.target.value)}
+                placeholder="23kg + 7kg"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Outbound Sector">
-              <input className="input" value={outboundSector} onChange={(e) => setOutboundSector(e.target.value)} />
+              <input
+                className="input"
+                value={outboundSector}
+                onChange={(e) => setOutboundSector(e.target.value)}
+                placeholder="LHR → JED"
+              />
             </Field>
             <Field label="Return Sector">
-              <input className="input" value={returnSector} onChange={(e) => setReturnSector(e.target.value)} />
+              <input
+                className="input"
+                value={returnSector}
+                onChange={(e) => setReturnSector(e.target.value)}
+                placeholder="MED → LHR"
+              />
             </Field>
           </div>
 
           <div style={{ marginBottom: 24 }}>
             <Field label="Flight Notes">
-              <textarea className="input" rows={4} value={flightNotes} onChange={(e) => setFlightNotes(e.target.value)} />
+              <textarea
+                className="input"
+                rows={3}
+                value={flightNotes}
+                onChange={(e) => setFlightNotes(e.target.value)}
+                placeholder="Transit / timings / baggage notes"
+                style={styles.textarea}
+              />
             </Field>
           </div>
 
@@ -501,37 +702,78 @@ export default function EditQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Hotel Cost">
-              <input className="input" value={hotelCost} onChange={(e) => setHotelCost(e.target.value)} />
+              <input
+                className="input"
+                value={hotelCost}
+                onChange={(e) => setHotelCost(e.target.value)}
+                placeholder="500"
+              />
             </Field>
             <Field label="Flight Cost">
-              <input className="input" value={flightCost} onChange={(e) => setFlightCost(e.target.value)} />
+              <input
+                className="input"
+                value={flightCost}
+                onChange={(e) => setFlightCost(e.target.value)}
+                placeholder="350"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Visa Cost">
-              <input className="input" value={visaCost} onChange={(e) => setVisaCost(e.target.value)} />
+              <input
+                className="input"
+                value={visaCost}
+                onChange={(e) => setVisaCost(e.target.value)}
+                placeholder="120"
+              />
             </Field>
             <Field label="Transport Cost">
-              <input className="input" value={transportCost} onChange={(e) => setTransportCost(e.target.value)} />
+              <input
+                className="input"
+                value={transportCost}
+                onChange={(e) => setTransportCost(e.target.value)}
+                placeholder="80"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Ziyarat Cost">
-              <input className="input" value={ziyaratCost} onChange={(e) => setZiyaratCost(e.target.value)} />
+              <input
+                className="input"
+                value={ziyaratCost}
+                onChange={(e) => setZiyaratCost(e.target.value)}
+                placeholder="50"
+              />
             </Field>
             <Field label="Other Cost">
-              <input className="input" value={otherCost} onChange={(e) => setOtherCost(e.target.value)} />
+              <input
+                className="input"
+                value={otherCost}
+                onChange={(e) => setOtherCost(e.target.value)}
+                placeholder="30"
+              />
             </Field>
           </div>
 
           <div className="row" style={{ marginBottom: 18 }}>
             <Field label="Agent Profit">
-              <input className="input" value={agentProfit} onChange={(e) => setAgentProfit(e.target.value)} />
+              <input
+                className="input"
+                value={agentProfit}
+                onChange={(e) => setAgentProfit(e.target.value)}
+                placeholder="150"
+              />
             </Field>
             <Field label="Total Selling Price">
-              <input className="input" value={totalPrice} onChange={(e) => setTotalPrice(e.target.value)} required />
+              <input
+                className="input"
+                value={totalPrice}
+                onChange={(e) => setTotalPrice(e.target.value)}
+                placeholder="1230"
+                required
+              />
             </Field>
           </div>
 
@@ -539,7 +781,12 @@ export default function EditQuotationPage() {
 
           <div className="row" style={{ marginBottom: 14 }}>
             <Field label="Deposit Amount">
-              <input className="input" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
+              <input
+                className="input"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="200"
+              />
             </Field>
             <Field label="Remaining Balance">
               <input className="input" value={remainingBalance} readOnly />
@@ -548,7 +795,12 @@ export default function EditQuotationPage() {
 
           <div style={{ marginBottom: 18 }}>
             <Field label="Payment Plan">
-              <input className="input" value={paymentPlan} onChange={(e) => setPaymentPlan(e.target.value)} />
+              <input
+                className="input"
+                value={paymentPlan}
+                onChange={(e) => setPaymentPlan(e.target.value)}
+                placeholder="Deposit + remaining before travel"
+              />
             </Field>
           </div>
 
@@ -556,7 +808,14 @@ export default function EditQuotationPage() {
 
           <div style={{ marginBottom: 22 }}>
             <Field label="Internal / Client Notes">
-              <textarea className="input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <textarea
+                className="input"
+                rows={4}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Special requests / room preference / elderly passengers / wheelchairs etc."
+                style={styles.textarea}
+              />
             </Field>
           </div>
 
@@ -596,7 +855,7 @@ function SectionTitle({ title }) {
 
 function Field({ label, children }) {
   return (
-    <div style={{ width: "100%" }}>
+    <div>
       <div className="label">{label}</div>
       {children}
     </div>
@@ -627,6 +886,11 @@ function CheckItem({ label, checked, onChange }) {
   );
 }
 
+function toInputValue(value) {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
 const checkboxWrap = {
   display: "flex",
   flexWrap: "wrap",
@@ -648,10 +912,10 @@ const styles = {
   topbar: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 18,
+    alignItems: "flex-start",
+    gap: 16,
     flexWrap: "wrap",
+    marginBottom: 18,
   },
   title: {
     margin: 0,
@@ -661,12 +925,16 @@ const styles = {
     margin: "8px 0 0",
     color: "var(--muted)",
   },
-  selectWrap: {
-    position: "relative",
-    width: "100%",
+  topButtons: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
   },
-  select: {
-    width: "100%",
+  textarea: {
+    resize: "vertical",
+    minHeight: 110,
+  },
+  darkSelect: {
     appearance: "none",
     WebkitAppearance: "none",
     MozAppearance: "none",
@@ -674,23 +942,13 @@ const styles = {
     color: "#e9e9f2",
     border: "1px solid rgba(255,255,255,.10)",
     borderRadius: 14,
-    padding: "12px 42px 12px 14px",
+    padding: "12px 14px",
     outline: "none",
-    fontSize: 14,
+    width: "100%",
     boxSizing: "border-box",
-    cursor: "pointer",
   },
-  option: {
+  optionDark: {
     backgroundColor: "#141421",
     color: "#e9e9f2",
-  },
-  selectArrow: {
-    position: "absolute",
-    right: 14,
-    top: "50%",
-    transform: "translateY(-50%)",
-    pointerEvents: "none",
-    color: "rgba(255,255,255,.72)",
-    fontSize: 16,
   },
 };
