@@ -6,6 +6,66 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 
+function safe(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
+
+function formatCurrency(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const stringValue = String(value).trim();
+  if (stringValue.startsWith("£")) return stringValue;
+  return `£${stringValue}`;
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
+function yesNo(value) {
+  return value ? "Yes" : "No";
+}
+
+function safeFile(value) {
+  return String(value || "quotation")
+    .replace(/[^a-zA-Z0-9-_]/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function InfoCard({ title, items }) {
+  return (
+    <div style={styles.infoCard}>
+      <div style={styles.infoCardTitle}>{title}</div>
+      <div style={styles.infoCardBody}>
+        {items.map(([label, value]) => (
+          <div key={label} style={styles.infoRow}>
+            <div style={styles.infoLabel}>{label}</div>
+            <div style={styles.infoValue}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PriceRow({ label, value, strong = false }) {
+  return (
+    <div
+      style={{
+        ...styles.priceRow,
+        fontWeight: strong ? 800 : 500,
+        fontSize: strong ? "17px" : "14px",
+      }}
+    >
+      <span>{label}</span>
+      <span>{formatCurrency(value)}</span>
+    </div>
+  );
+}
+
 export default function QuotationPdfPage() {
   const params = useParams();
   const router = useRouter();
@@ -42,9 +102,7 @@ export default function QuotationPdfPage() {
       setLoading(false);
     }
 
-    if (quotationId) {
-      loadQuotation();
-    }
+    if (quotationId) loadQuotation();
   }, [quotationId, router]);
 
   async function addLogoToPdf(doc) {
@@ -67,35 +125,6 @@ export default function QuotationPdfPage() {
     } catch (error) {
       return false;
     }
-  }
-
-  function safe(value) {
-    if (value === null || value === undefined || value === "") return "—";
-    return String(value);
-  }
-
-  function formatCurrency(value) {
-    if (value === null || value === undefined || value === "") return "—";
-    const stringValue = String(value).trim();
-    if (stringValue.startsWith("£")) return stringValue;
-    return `£${stringValue}`;
-  }
-
-  function formatDate(value) {
-    if (!value) return "—";
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return String(value);
-    return d.toLocaleDateString();
-  }
-
-  function yesNo(value) {
-    return value ? "Yes" : "No";
-  }
-
-  function safeFile(value) {
-    return String(value || "quotation")
-      .replace(/[^a-zA-Z0-9-_]/g, "-")
-      .replace(/-+/g, "-");
   }
 
   function drawText(doc, text, x, y, opts = {}) {
@@ -134,7 +163,7 @@ export default function QuotationPdfPage() {
   function drawMiniTable(doc, headers, rows, startY, colWidths) {
     const startX = 14;
     const headerHeight = 7;
-    const rowHeight = 8;
+    const rowHeight = 10;
 
     let x = startX;
     doc.setFillColor(240, 240, 240);
@@ -156,11 +185,11 @@ export default function QuotationPdfPage() {
       row.forEach((cell, i) => {
         doc.rect(rowX, y, colWidths[i], rowHeight);
         doc.setFont("times", "normal");
-        doc.setFontSize(9);
+        doc.setFontSize(8.7);
         doc.setTextColor(30, 30, 30);
 
         const lines = doc.splitTextToSize(String(cell), colWidths[i] - 4);
-        doc.text(lines, rowX + 2, y + 5);
+        doc.text(lines, rowX + 2, y + 4.5);
         rowX += colWidths[i];
       });
       y += rowHeight;
@@ -171,11 +200,9 @@ export default function QuotationPdfPage() {
 
   function drawHotelBox(doc, title, rowData, startY) {
     const x = 20;
-    const boxWidth = 120;
     const headerH = 7;
-    const rowH = 26;
+    const rowH = 24;
     const colWidths = [36, 36, 38, 30];
-
     const headers = [title, "Room Type", "Date", "No. Of Nights"];
 
     let currentX = x;
@@ -200,8 +227,7 @@ export default function QuotationPdfPage() {
       doc.setTextColor(25, 25, 25);
 
       const lines = doc.splitTextToSize(String(cell), colWidths[i] - 6);
-      const startTextY = startY + headerH + 10;
-      doc.text(lines, currentX + 3, startTextY);
+      doc.text(lines, currentX + 3, startY + headerH + 10);
       currentX += colWidths[i];
     });
 
@@ -209,24 +235,18 @@ export default function QuotationPdfPage() {
   }
 
   function buildFlightRows() {
-    const rows = [];
-
-    const travelDate = safe(quote.travel_date);
-    const outboundSector = safe(quote.outbound_sector);
-    const returnSector = safe(quote.return_sector);
-    const airline = safe(quote.airline);
-
-    rows.push([
-      travelDate,
-      "—",
-      airline,
-      outboundSector,
-      returnSector,
-      "—",
-      "—",
-    ]);
-
-    return rows;
+    if (!quote) return [];
+    return [
+      [
+        safe(quote.travel_date),
+        "—",
+        safe(quote.airline),
+        safe(quote.outbound_sector),
+        safe(quote.return_sector),
+        "—",
+        "—",
+      ],
+    ];
   }
 
   async function handleDownloadPdf() {
@@ -236,11 +256,9 @@ export default function QuotationPdfPage() {
       setDownloading(true);
 
       const doc = new jsPDF("p", "mm", "a4");
-      const pageWidth = doc.internal.pageSize.getWidth();
 
       await addLogoToPdf(doc);
 
-      // Header
       doc.setFont("times", "normal");
       doc.setFontSize(11);
       doc.setTextColor(40, 40, 40);
@@ -257,7 +275,6 @@ export default function QuotationPdfPage() {
       doc.setFontSize(12);
       doc.setTextColor(15, 15, 15);
       doc.text(safe(quote.booking_reference), 151, 25);
-
       doc.setFont("times", "bold");
       doc.setFontSize(10);
       doc.text(`Date: ${formatDate(quote.created_at)}`, 150, 39);
@@ -265,14 +282,11 @@ export default function QuotationPdfPage() {
 
       let y = 45;
 
-      // Intro
-      y = drawText(
-        doc,
-        "Dear Customer,",
-        14,
-        y,
-        { size: 12, style: "bold", color: [20, 20, 20] }
-      ) + 4;
+      y = drawText(doc, "Dear Customer,", 14, y, {
+        size: 12,
+        style: "bold",
+        color: [20, 20, 20],
+      }) + 4;
 
       y = drawText(
         doc,
@@ -290,47 +304,48 @@ export default function QuotationPdfPage() {
         { size: 10.5, maxWidth: 182, lineHeight: 5.2, color: [45, 45, 45] }
       ) + 8;
 
-      // Flights details
       y = drawSectionTitle(doc, "Flights Details:", y);
 
-      y = drawMiniTable(
-        doc,
-        ["Date", "Flight", "Carrier", "Departs", "Arrives", "Duration", "Layover"],
-        buildFlightRows(),
-        y,
-        [18, 15, 22, 52, 52, 18, 15]
-      ) + 10;
+      y =
+        drawMiniTable(
+          doc,
+          ["Date", "Flight", "Carrier", "Departs", "Arrives", "Duration", "Layover"],
+          buildFlightRows(),
+          y,
+          [18, 15, 22, 52, 52, 18, 15]
+        ) + 10;
 
-      // Hotel details
       y = drawSectionTitle(doc, "HOTEL DETAILS:", y);
 
-      const makkahDateBlock = `${safe(quote.travel_date)}\nCheck-out as per stay plan`;
-      y = drawHotelBox(
-        doc,
-        "Makkah Hotel",
-        [
-          safe(quote.makkah_hotel_name),
-          `${safe(quote.makkah_room_type)}\n(${safe(quote.meals_included) === "Yes" ? "Breakfast" : "Room Only"})`,
-          makkahDateBlock,
-          `${safe(quote.makkah_nights)} Nights`,
-        ],
-        y + 2
-      ) + 6;
+      const mealLabel = quote.meals_included ? "Breakfast" : "Room Only";
+      const dateBlock = `${safe(quote.travel_date)}\nCheck-out as per stay plan`;
 
-      const madinahDateBlock = `${safe(quote.travel_date)}\nCheck-out as per stay plan`;
-      y = drawHotelBox(
-        doc,
-        "Madinah Hotel",
-        [
-          safe(quote.madinah_hotel_name),
-          `${safe(quote.madinah_room_type)}\n(${safe(quote.meals_included) === "Yes" ? "Breakfast" : "Room Only"})`,
-          madinahDateBlock,
-          `${safe(quote.madinah_nights)} Nights`,
-        ],
-        y
-      ) + 10;
+      y =
+        drawHotelBox(
+          doc,
+          "Makkah Hotel",
+          [
+            safe(quote.makkah_hotel_name),
+            `${safe(quote.makkah_room_type)}\n(${mealLabel})`,
+            dateBlock,
+            `${safe(quote.makkah_nights)} Nights`,
+          ],
+          y + 2
+        ) + 6;
 
-      // Total package line
+      y =
+        drawHotelBox(
+          doc,
+          "Madinah Hotel",
+          [
+            safe(quote.madinah_hotel_name),
+            `${safe(quote.madinah_room_type)}\n(${mealLabel})`,
+            dateBlock,
+            `${safe(quote.madinah_nights)} Nights`,
+          ],
+          y
+        ) + 10;
+
       doc.setFont("times", "bold");
       doc.setFontSize(12.5);
       doc.setTextColor(20, 20, 20);
@@ -340,24 +355,18 @@ export default function QuotationPdfPage() {
 
       doc.setFont("times", "bold");
       doc.setFontSize(12);
-      doc.setTextColor(20, 20, 20);
       doc.text("Total Prices for 01 Adult:", 14, y);
 
       const priceText = formatCurrency(quote.total_price);
       const priceX = 63;
       doc.setFillColor(255, 242, 0);
       doc.rect(priceX - 1, y - 5, 24, 7, "F");
-      doc.setTextColor(20, 20, 20);
       doc.text(priceText, priceX, y);
-
-      doc.setFont("times", "bold");
       doc.text("including all.", priceX + 25, y);
 
       y += 12;
 
-      // Exclusive offer
       doc.setFont("times", "bold");
-      doc.setFontSize(12);
       doc.setTextColor(20, 20, 20);
       doc.text("Exclusive Offer:", 14, y);
 
@@ -367,17 +376,16 @@ export default function QuotationPdfPage() {
       doc.text("BOOK NOW AND PAY LATER", 14, y);
 
       doc.setTextColor(20, 20, 20);
-      const offerRest =
-        ` in which you can pay ${formatCurrency(quote.deposit_amount)} now and rest you can pay in easy instalments which will have to be cleared one month before travelling.`;
+      const offerRest = ` in which you can pay ${formatCurrency(
+        quote.deposit_amount
+      )} now and rest you can pay in easy instalments which will have to be cleared one month before travelling.`;
       const offerLines = doc.splitTextToSize(offerRest, 140);
       doc.text(offerLines, 66, y);
 
       y += offerLines.length * 5 + 10;
 
-      // Why book with us
       doc.setFont("times", "bold");
       doc.setFontSize(12);
-      doc.setTextColor(20, 20, 20);
       doc.text("Why you should book with us:", 14, y);
 
       y += 7;
@@ -390,7 +398,6 @@ export default function QuotationPdfPage() {
       doc.text("• Ongoing support before and during your journey", 18, y);
       y += 10;
 
-      // Contact
       doc.setFont("times", "bold");
       doc.setFontSize(12);
       doc.text("Contact Details:", 14, y);
@@ -405,7 +412,6 @@ export default function QuotationPdfPage() {
       y += 5;
       doc.text("Accreditation: IATA & ATOL Accredited", 14, y);
 
-      // Page 2: terms
       doc.addPage();
 
       let ty = 20;
@@ -450,7 +456,6 @@ export default function QuotationPdfPage() {
       const noteLines = doc.splitTextToSize(safe(quote.notes), 180);
       doc.text(noteLines, 14, ty);
 
-      // Footer
       doc.setDrawColor(180, 180, 180);
       doc.line(14, 282, 196, 282);
       doc.setFont("times", "bold");
@@ -506,7 +511,6 @@ export default function QuotationPdfPage() {
             <Link href={`/agent/quotations/${quotationId}`} style={styles.topBtnDark}>
               ← Back to Detail
             </Link>
-
             <Link href="/agent/quotations" style={styles.topBtnDark}>
               Saved Quotations
             </Link>
@@ -516,7 +520,6 @@ export default function QuotationPdfPage() {
             <button onClick={handlePrint} style={styles.topBtnDark}>
               Print
             </button>
-
             <button onClick={handleDownloadPdf} style={styles.topBtnPrimary}>
               {downloading ? "Downloading..." : "Download PDF"}
             </button>
@@ -665,9 +668,7 @@ export default function QuotationPdfPage() {
               />
               <InfoCard
                 title="Flight Notes"
-                items={[
-                  ["Notes", safe(quote.flight_notes)],
-                ]}
+                items={[["Notes", safe(quote.flight_notes)]]}
               />
             </div>
           </section>
@@ -763,37 +764,6 @@ export default function QuotationPdfPage() {
         </div>
       </div>
     </>
-  );
-}
-
-function InfoCard({ title, items }) {
-  return (
-    <div style={styles.infoCard}>
-      <div style={styles.infoCardTitle}>{title}</div>
-      <div style={styles.infoCardBody}>
-        {items.map(([label, value]) => (
-          <div key={label} style={styles.infoRow}>
-            <div style={styles.infoLabel}>{label}</div>
-            <div style={styles.infoValue}>{value}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PriceRow({ label, value, strong = false }) {
-  return (
-    <div
-      style={{
-        ...styles.priceRow,
-        fontWeight: strong ? 800 : 500,
-        fontSize: strong ? "17px" : "14px",
-      }}
-    >
-      <span>{label}</span>
-      <span>{formatCurrency(value)}</span>
-    </div>
   );
 }
 
