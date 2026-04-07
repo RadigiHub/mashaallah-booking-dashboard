@@ -48,35 +48,6 @@ export default function QuotationPdfPage() {
     }
   }, [quotationId, router]);
 
-  function safe(value) {
-    if (value === null || value === undefined || value === "") return "—";
-    return String(value);
-  }
-
-  function yesNo(value) {
-    return value ? "Yes" : "No";
-  }
-
-  function formatDate(value) {
-    if (!value) return "—";
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return String(value);
-    return d.toLocaleDateString();
-  }
-
-  function formatCurrency(value) {
-    if (value === null || value === undefined || value === "") return "—";
-    const stringValue = String(value).trim();
-    if (stringValue.startsWith("£")) return stringValue;
-    return `£${stringValue}`;
-  }
-
-  function safeFile(value) {
-    return String(value || "quotation")
-      .replace(/[^a-zA-Z0-9-_]/g, "-")
-      .replace(/-+/g, "-");
-  }
-
   async function addLogoToPdf(doc) {
     try {
       const logoUrl =
@@ -110,7 +81,6 @@ export default function QuotationPdfPage() {
 
       const logoAdded = await addLogoToPdf(doc);
 
-      // Header
       if (!logoAdded) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(24);
@@ -139,7 +109,6 @@ export default function QuotationPdfPage() {
       doc.text(`Status: ${safe(quote.quotation_status)}`, 144, 38);
       doc.text(`Date: ${formatDate(quote.created_at)}`, 144, 44);
 
-      // Contact strip
       doc.setFillColor(255, 248, 235);
       doc.rect(0, 50, pageWidth, 14, "F");
       doc.setFont("helvetica", "normal");
@@ -149,7 +118,6 @@ export default function QuotationPdfPage() {
       doc.text("Website: www.mashaallahtrips.com", 74, 58);
       doc.text("13 Station Rd, London SE25 5AH, UK", 144, 58);
 
-      // Hero
       doc.setFillColor(247, 241, 252);
       doc.rect(0, 64, pageWidth, 20, "F");
       doc.setFont("helvetica", "bold");
@@ -165,7 +133,6 @@ export default function QuotationPdfPage() {
         80
       );
 
-      // Client details
       autoTable(doc, {
         startY: 92,
         theme: "grid",
@@ -190,7 +157,6 @@ export default function QuotationPdfPage() {
         ],
       });
 
-      // Package summary
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 8,
         theme: "grid",
@@ -215,7 +181,6 @@ export default function QuotationPdfPage() {
         ],
       });
 
-      // Flight details
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 8,
         theme: "grid",
@@ -238,7 +203,6 @@ export default function QuotationPdfPage() {
         ],
       });
 
-      // Hotel details
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 8,
         theme: "grid",
@@ -264,7 +228,6 @@ export default function QuotationPdfPage() {
         ],
       });
 
-      // Included services
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 8,
         theme: "grid",
@@ -286,7 +249,6 @@ export default function QuotationPdfPage() {
         ],
       });
 
-      // Pricing
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 8,
         theme: "grid",
@@ -316,7 +278,6 @@ export default function QuotationPdfPage() {
 
       let y = doc.lastAutoTable.finalY + 10;
 
-      // Total package line
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(20, 24, 39);
@@ -329,7 +290,6 @@ export default function QuotationPdfPage() {
       doc.setFontSize(13);
       doc.text(`Total Price: ${formatCurrency(quote.total_price)}`, 18, y + 3);
 
-      // BNPL block
       y += 15;
       doc.setFillColor(255, 244, 244);
       doc.roundedRect(14, y - 4, 182, 14, 3, 3, "F");
@@ -342,7 +302,6 @@ export default function QuotationPdfPage() {
         y + 4
       );
 
-      // Why book with us
       y += 22;
       doc.setTextColor(20, 24, 39);
       doc.setFont("helvetica", "bold");
@@ -355,7 +314,6 @@ export default function QuotationPdfPage() {
       doc.text("• Competitive pricing with trusted travel suppliers", 18, y + 14);
       doc.text("• Ongoing support before and during your journey", 18, y + 20);
 
-      // Notes
       y += 30;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
@@ -366,7 +324,6 @@ export default function QuotationPdfPage() {
       const noteLines = doc.splitTextToSize(safe(quote.notes), 180);
       doc.text(noteLines, 14, y + 8);
 
-      // New page for terms
       doc.addPage();
 
       doc.setFont("helvetica", "bold");
@@ -387,7 +344,7 @@ export default function QuotationPdfPage() {
         "Hotel distance, room type and star rating remain subject to final booking confirmation.",
         "Full balance must be paid before travel as per agreed payment schedule.",
         "Special requests are not guaranteed unless confirmed in final booking documents.",
-        "By proceeding, the client agrees to MashaAllah Trips booking and cancellation policy."
+        "By proceeding, the client agrees to MashaAllah Trips booking and cancellation policy.",
       ];
 
       let ty = 32;
@@ -397,7 +354,6 @@ export default function QuotationPdfPage() {
         ty += lines.length * 6 + 2;
       });
 
-      // Footer
       doc.setDrawColor(220, 220, 220);
       doc.line(14, 270, 196, 270);
       doc.setFont("helvetica", "bold");
@@ -475,7 +431,13 @@ export default function QuotationPdfPage() {
         <div className="pdf-paper" style={styles.paper}>
           <header style={styles.header}>
             <div style={styles.headerLeft}>
-              <div style={styles.brandText}>MashaAllah Trips</div>
+              <div style={styles.logoHtmlWrap}>
+                <img
+                  src="https://mashaallahtrips.com/wp-content/uploads/2026/01/cropped-Mashaallah-6-scaled-1.webp"
+                  alt="MashaAllah Trips"
+                  style={styles.logoHtml}
+                />
+              </div>
               <div style={styles.brandSub}>Professional Umrah Quotation</div>
 
               <div style={styles.accreditationRow}>
@@ -649,6 +611,30 @@ export default function QuotationPdfPage() {
           </section>
 
           <section style={styles.section}>
+            <div style={styles.totalIncludeBox}>
+              Total Package Includes Flights, Hotels & Visa
+            </div>
+            <div style={styles.totalPriceBox}>
+              Total Price: {formatCurrency(quote.total_price)}
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <div style={styles.offerBox}>
+              BOOK NOW & PAY LATER — Secure your Umrah package with deposit and pay the remaining balance in easy instalments.
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <div style={styles.sectionTitle}>Why You Should Book With Us</div>
+            <div style={styles.whyBookBox}>
+              <div>• Customized Umrah packages based on your travel needs</div>
+              <div>• Best rates through trusted travel suppliers</div>
+              <div>• Ongoing support before and during your journey</div>
+            </div>
+          </section>
+
+          <section style={styles.section}>
             <div style={styles.sectionTitle}>Notes</div>
             <div style={styles.notesBox}>{safe(quote.notes)}</div>
           </section>
@@ -714,6 +700,35 @@ function PriceRow({ label, value, strong = false }) {
       <span>{formatCurrency(value)}</span>
     </div>
   );
+}
+
+function safe(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
+
+function formatCurrency(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const stringValue = String(value).trim();
+  if (stringValue.startsWith("£")) return stringValue;
+  return `£${stringValue}`;
+}
+
+function yesNo(value) {
+  return value ? "Yes" : "No";
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
+function safeFile(value) {
+  return String(value || "quotation")
+    .replace(/[^a-zA-Z0-9-_]/g, "-")
+    .replace(/-+/g, "-");
 }
 
 const styles = {
@@ -787,10 +802,15 @@ const styles = {
     display: "grid",
     gap: "8px",
   },
-  brandText: {
-    fontSize: "30px",
-    fontWeight: 900,
-    color: "#111827",
+  logoHtmlWrap: {
+    minHeight: "52px",
+    display: "flex",
+    alignItems: "center",
+  },
+  logoHtml: {
+    maxWidth: "250px",
+    maxHeight: "60px",
+    objectFit: "contain",
   },
   brandSub: {
     color: "#6b7280",
@@ -979,6 +999,45 @@ const styles = {
   paymentPlanLabel: {
     fontWeight: 700,
     marginBottom: "4px",
+  },
+  totalIncludeBox: {
+    padding: "14px 16px",
+    borderRadius: "14px",
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    fontWeight: 700,
+    color: "#1f2937",
+    marginBottom: "12px",
+  },
+  totalPriceBox: {
+    padding: "16px 18px",
+    borderRadius: "14px",
+    background: "#effcf3",
+    border: "1px solid #ccefd7",
+    fontWeight: 900,
+    fontSize: "20px",
+    color: "#0f7a38",
+  },
+  offerBox: {
+    padding: "16px 18px",
+    borderRadius: "14px",
+    background: "#fff2f2",
+    border: "1px solid #ffd4d4",
+    fontWeight: 800,
+    color: "#b91c1c",
+    fontSize: "15px",
+    lineHeight: 1.6,
+  },
+  whyBookBox: {
+    border: "1px solid #e5e7eb",
+    borderRadius: "16px",
+    background: "#fff",
+    padding: "16px",
+    lineHeight: 1.8,
+    fontSize: "14px",
+    color: "#374151",
+    display: "grid",
+    gap: "6px",
   },
   notesBox: {
     border: "1px solid #e5e7eb",
