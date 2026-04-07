@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
 
@@ -9,8 +10,10 @@ export default function QuotationPdfPage() {
   const params = useParams();
   const router = useRouter();
   const quotationId = params?.id;
+  const pdfRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [quote, setQuote] = useState(null);
   const [msg, setMsg] = useState("");
 
@@ -45,16 +48,62 @@ export default function QuotationPdfPage() {
     }
   }, [quotationId, router]);
 
+  async function handleDownloadPdf() {
+    if (!pdfRef.current || !quote) return;
+
+    try {
+      setDownloading(true);
+
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+
+      const canvas = await html2canvas(pdfRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        scrollY: -window.scrollY,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 8;
+      const usableWidth = pageWidth - margin * 2;
+
+      const imgWidth = usableWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight - margin * 2;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight - margin * 2;
+      }
+
+      const fileName = `quotation-${safeFile(quote.booking_reference || quote.client_name || "mashaallah-trips")}.pdf`;
+      pdf.save(fileName);
+    } catch (error) {
+      console.error(error);
+      alert("PDF download failed. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   function handlePrint() {
     window.print();
   }
 
   if (loading) {
-    return (
-      <div style={styles.loadingWrap}>
-        Loading quotation PDF...
-      </div>
-    );
+    return <div style={styles.loadingWrap}>Loading quotation PDF...</div>;
   }
 
   if (!quote) {
@@ -78,35 +127,46 @@ export default function QuotationPdfPage() {
       <div className="pdf-page-shell" style={styles.outer}>
         <div className="no-print" style={styles.toolbar}>
           <div style={styles.toolbarLeft}>
-            <Link
-              href={`/agent/quotations/${quotationId}`}
-              style={styles.topBtnDark}
-            >
+            <Link href={`/agent/quotations/${quotationId}`} style={styles.topBtnDark}>
               ← Back to Detail
             </Link>
 
-            <Link
-              href="/agent/quotations"
-              style={styles.topBtnDark}
-            >
+            <Link href="/agent/quotations" style={styles.topBtnDark}>
               Saved Quotations
             </Link>
           </div>
 
-          <button onClick={handlePrint} style={styles.topBtnPrimary}>
-            Print / Save PDF
-          </button>
+          <div style={styles.toolbarRight}>
+            <button onClick={handlePrint} style={styles.topBtnDark}>
+              Print
+            </button>
+
+            <button onClick={handleDownloadPdf} style={styles.topBtnPrimary}>
+              {downloading ? "Downloading..." : "Download PDF"}
+            </button>
+          </div>
         </div>
 
-        <div className="pdf-paper" style={styles.paper}>
+        <div ref={pdfRef} className="pdf-paper" style={styles.paper}>
           <header style={styles.header}>
-            <div>
-              <div style={styles.brandRow}>
-                <div style={styles.logo}>M</div>
-                <div>
-                  <div style={styles.brandTitle}>MashaAllah Trips</div>
-                  <div style={styles.brandSub}>Professional Umrah Quotation</div>
-                </div>
+            <div style={styles.headerLeft}>
+              <div style={styles.logoWrap}>
+                <Image
+                  src="/mashaallah-logo.webp"
+                  alt="MashaAllah Trips"
+                  width={180}
+                  height={42}
+                  style={{ height: "auto", width: "180px", objectFit: "contain" }}
+                  unoptimized
+                />
+              </div>
+
+              <div style={styles.brandFallback}>MashaAllah Trips</div>
+              <div style={styles.brandSub}>Professional Umrah Quotation</div>
+
+              <div style={styles.accreditationRow}>
+                <span style={styles.badgeGold}>IATA Accredited</span>
+                <span style={styles.badgeGold}>ATOL Accredited</span>
               </div>
             </div>
 
@@ -115,12 +175,19 @@ export default function QuotationPdfPage() {
                 <div style={styles.refLabel}>Booking Reference</div>
                 <div style={styles.refValue}>{safe(quote.booking_reference)}</div>
               </div>
+
               <div style={styles.headerMeta}>
                 <div><b>Status:</b> {safe(quote.quotation_status)}</div>
                 <div><b>Date:</b> {formatDate(quote.created_at)}</div>
               </div>
             </div>
           </header>
+
+          <section style={styles.contactStrip}>
+            <div><b>Phone:</b> +44 204 5557 373</div>
+            <div><b>Website:</b> www.mashaallahtrips.com</div>
+            <div><b>Address:</b> 13 Station Rd, London SE25 5AH, UK</div>
+          </section>
 
           <section style={styles.heroStrip}>
             <div style={styles.heroLeft}>
@@ -129,6 +196,7 @@ export default function QuotationPdfPage() {
                 Thank you for choosing MashaAllah Trips. Please review the quotation details below.
               </div>
             </div>
+
             <div style={styles.heroBadge}>Client Copy</div>
           </section>
 
@@ -245,11 +313,7 @@ export default function QuotationPdfPage() {
                 <PriceRow label="Other Cost" value={quote.other_cost} />
                 <PriceRow label="Agent Profit" value={quote.agent_profit} />
                 <div style={styles.priceDivider}></div>
-                <PriceRow
-                  label="Total Selling Price"
-                  value={quote.total_price}
-                  strong
-                />
+                <PriceRow label="Total Selling Price" value={quote.total_price} strong />
               </div>
 
               <div style={styles.paymentCard}>
@@ -279,41 +343,26 @@ export default function QuotationPdfPage() {
             <div style={styles.sectionTitle}>Terms & Conditions</div>
             <div style={styles.tcBox}>
               <ol style={styles.tcList}>
-                <li>
-                  All quotations are subject to availability at the time of booking confirmation.
-                </li>
-                <li>
-                  Prices may change until flights, hotels, transport and other services are fully confirmed.
-                </li>
-                <li>
-                  Deposit payments may be non-refundable or partially refundable depending on airline, hotel and supplier policies.
-                </li>
-                <li>
-                  Visa approval is subject to the rules and decisions of the relevant authorities.
-                </li>
-                <li>
-                  Flight schedules, baggage allowance and routing may change as per airline operational updates.
-                </li>
-                <li>
-                  Full balance must be cleared before travel according to the agreed payment terms.
-                </li>
-                <li>
-                  Hotel distance, rating and room types are subject to final supplier confirmation.
-                </li>
-                <li>
-                  Any special request does not guarantee confirmation unless explicitly stated in final booking documents.
-                </li>
-                <li>
-                  By proceeding with the booking, the client agrees to the agency’s booking and cancellation terms.
-                </li>
+                <li>All quotations are subject to availability at the time of booking confirmation.</li>
+                <li>Prices may change until flights, hotels, transport and all services are fully confirmed.</li>
+                <li>Deposit payments may be non-refundable or partially refundable depending on supplier terms.</li>
+                <li>Visa approval is subject to the rules and final decision of the relevant authorities.</li>
+                <li>Flight timings, baggage allowance and routing may change as per airline operational updates.</li>
+                <li>Hotel distance, room type and star rating remain subject to final booking confirmation.</li>
+                <li>Full balance must be paid before travel as per agreed payment schedule.</li>
+                <li>Special requests are not guaranteed unless confirmed in final booking documents.</li>
+                <li>By proceeding, the client agrees to MashaAllah Trips booking and cancellation policy.</li>
               </ol>
             </div>
           </section>
 
           <footer style={styles.footer}>
             <div style={styles.footerBrand}>MashaAllah Trips</div>
-            <div style={styles.footerText}>
-              This quotation is generated for internal sales and client proposal use.
+            <div style={styles.footerLine}>
+              +44 204 5557 373 • www.mashaallahtrips.com • 13 Station Rd, London SE25 5AH, UK
+            </div>
+            <div style={styles.footerMini}>
+              IATA & ATOL Accredited • Premium Umrah Travel Services
             </div>
           </footer>
         </div>
@@ -376,10 +425,17 @@ function formatCurrency(value) {
   return `£${stringValue}`;
 }
 
+function safeFile(value) {
+  return String(value || "quotation")
+    .replace(/[^a-zA-Z0-9-_]/g, "-")
+    .replace(/-+/g, "-");
+}
+
 const styles = {
   outer: {
     minHeight: "100vh",
-    background: "#0d0f16",
+    background:
+      "radial-gradient(1200px 700px at 15% 20%, rgba(123,47,247,0.20), transparent 55%), radial-gradient(900px 600px at 85% 30%, rgba(241,7,163,0.18), transparent 55%), #070712",
     padding: "28px",
     boxSizing: "border-box",
     fontFamily:
@@ -395,6 +451,11 @@ const styles = {
     flexWrap: "wrap",
   },
   toolbarLeft: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
+  toolbarRight: {
     display: "flex",
     gap: "10px",
     flexWrap: "wrap",
@@ -437,32 +498,41 @@ const styles = {
     borderBottom: "1px solid #e5e7eb",
     flexWrap: "wrap",
   },
-  brandRow: {
-    display: "flex",
-    gap: "14px",
-    alignItems: "center",
+  headerLeft: {
+    display: "grid",
+    gap: "8px",
   },
-  logo: {
-    width: "52px",
-    height: "52px",
-    borderRadius: "14px",
-    background: "linear-gradient(135deg,#7b2ff7,#f107a3)",
+  logoWrap: {
+    minHeight: "44px",
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
-    color: "white",
-    fontWeight: 900,
-    fontSize: "24px",
   },
-  brandTitle: {
-    fontSize: "28px",
+  brandFallback: {
+    fontSize: "18px",
     fontWeight: 900,
-    lineHeight: 1.1,
+    display: "none",
   },
   brandSub: {
     color: "#6b7280",
     fontSize: "14px",
+  },
+  accreditationRow: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
     marginTop: "4px",
+  },
+  badgeGold: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "7px 10px",
+    borderRadius: "999px",
+    background: "#fff7e6",
+    color: "#8a5b00",
+    border: "1px solid #f2d189",
+    fontWeight: 700,
+    fontSize: "12px",
   },
   headerRight: {
     display: "grid",
@@ -489,6 +559,16 @@ const styles = {
     color: "#374151",
     display: "grid",
     gap: "4px",
+  },
+  contactStrip: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "12px",
+    padding: "14px 32px",
+    background: "#fffaf1",
+    borderBottom: "1px solid #efe2c4",
+    fontSize: "13px",
+    color: "#4b5563",
   },
   heroStrip: {
     display: "flex",
@@ -647,15 +727,21 @@ const styles = {
     padding: "26px 32px 32px",
     borderTop: "1px solid #e5e7eb",
     textAlign: "center",
+    background: "#fcfcfd",
   },
   footerBrand: {
     fontWeight: 900,
     fontSize: "18px",
     marginBottom: "6px",
   },
-  footerText: {
-    color: "#6b7280",
+  footerLine: {
+    color: "#374151",
     fontSize: "13px",
+    marginBottom: "4px",
+  },
+  footerMini: {
+    color: "#6b7280",
+    fontSize: "12px",
   },
   loadingWrap: {
     minHeight: "100vh",
@@ -679,12 +765,14 @@ const styles = {
 const printStyles = `
   @page {
     size: A4;
-    margin: 14mm;
+    margin: 12mm;
   }
 
   @media print {
     html, body {
       background: #ffffff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
     .no-print {
@@ -707,12 +795,6 @@ const printStyles = `
     a {
       text-decoration: none !important;
       color: inherit !important;
-    }
-  }
-
-  @media (max-width: 900px) {
-    .pdf-paper {
-      border-radius: 16px !important;
     }
   }
 `;
