@@ -265,6 +265,13 @@ export default function QuotationDetailPage() {
               </button>
 
               <Link
+                href={`/agent/quotations/${quotationId}/pdf`}
+                style={styles.secondaryBtn}
+              >
+                View PDF
+              </Link>
+
+              <Link
                 href={`/agent/quotations/${quotationId}/edit`}
                 style={styles.secondaryBtn}
               >
