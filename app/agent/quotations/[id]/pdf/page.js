@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
 import jsPDF from "jspdf";
+import QRCode from "qrcode";
 
 function safe(value) {
   if (value === null || value === undefined || value === "") return "—";
@@ -89,27 +90,26 @@ export default function QuotationPdfPage() {
 
       const userEmail = session.user.email;
 
-      const [{ data: quotationData, error: quotationError }, { data: agentRow }] =
-        await Promise.all([
-          supabase.from("quotations").select("*").eq("id", quotationId).maybeSingle(),
-          supabase
-            .from("agents")
-            .select("full_name")
-            .ilike("email", userEmail)
-            .maybeSingle(),
-        ]);
+      const [quotationResult, agentResult] = await Promise.all([
+        supabase.from("quotations").select("*").eq("id", quotationId).maybeSingle(),
+        supabase
+          .from("agents")
+          .select("full_name")
+          .ilike("email", userEmail)
+          .maybeSingle(),
+      ]);
 
-      if (quotationError || !quotationData) {
+      if (quotationResult.error || !quotationResult.data) {
         setMsg("Quotation not found.");
         setLoading(false);
         return;
       }
 
-      if (agentRow?.full_name) {
-        setAgentName(agentRow.full_name);
+      if (agentResult?.data?.full_name) {
+        setAgentName(agentResult.data.full_name);
       }
 
-      setQuote(quotationData);
+      setQuote(quotationResult.data);
       setLoading(false);
     }
 
@@ -118,22 +118,32 @@ export default function QuotationPdfPage() {
     }
   }, [quotationId, router]);
 
-  async function addLogoToPdf(doc) {
+  async function blobToBase64(blob) {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function addImageFromUrl(doc, url, format, x, y, w, h) {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const base64 = await blobToBase64(blob);
+    doc.addImage(base64, format, x, y, w, h);
+  }
+
+  async function addPdfAssets(doc) {
     try {
-      const logoUrl =
+      const mainLogoUrl =
         "https://mashaallahtrips.com/wp-content/uploads/2026/01/cropped-Mashaallah-6-scaled-1.webp";
 
-      const response = await fetch(logoUrl);
-      const blob = await response.blob();
+      const trustLogoUrl =
+        "https://mashaallahtrips.com/wp-content/uploads/2026/01/Iata-Atol-confidence-1-3.png";
 
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      doc.addImage(base64, "WEBP", 14, 8, 48, 16);
+      await addImageFromUrl(doc, mainLogoUrl, "WEBP", 14, 8, 48, 16);
+      await addImageFromUrl(doc, trustLogoUrl, "PNG", 134, 8, 62, 18);
       return true;
     } catch (error) {
       return false;
@@ -172,13 +182,17 @@ export default function QuotationPdfPage() {
   }
 
   function buildFlightRowsFromQuote() {
-    const travelDate = safe(quote.travel_date);
-    const airline = safe(quote.airline);
-    const outbound = safe(quote.outbound_sector);
-    const inbound = safe(quote.return_sector);
-
+    if (!quote) return [];
     return [
-      [travelDate, "—", airline, outbound, inbound, "—", "—"],
+      [
+        safe(quote.travel_date),
+        "—",
+        safe(quote.airline),
+        safe(quote.outbound_sector),
+        safe(quote.return_sector),
+        "—",
+        "—",
+      ],
     ];
   }
 
@@ -277,38 +291,41 @@ export default function QuotationPdfPage() {
       setDownloading(true);
 
       const doc = new jsPDF("p", "mm", "a4");
-      await addLogoToPdf(doc);
+      await addPdfAssets(doc);
 
-      let y = 17;
+      // subtle royal header strip
+      doc.setFillColor(245, 238, 255);
+      doc.rect(0, 28, 210, 22, "F");
 
-      // Header right
+      doc.setFont("times", "bold");
+      doc.setFontSize(20);
+      doc.setTextColor(42, 20, 84);
+      doc.text("Umrah Package Proposal", 14, 41);
+
+      doc.setFont("times", "italic");
+      doc.setFontSize(10.5);
+      doc.setTextColor(88, 88, 88);
+      doc.text("Tailored by MashaAllah Trips for your sacred journey", 14, 47);
+
+      // quotation box
       doc.setDrawColor(190, 190, 190);
-      doc.rect(148, 8, 48, 22);
+      doc.rect(148, 31, 48, 18);
       doc.setFont("times", "normal");
       doc.setFontSize(9);
       doc.setTextColor(90, 90, 90);
-      doc.text("Quotation Ref", 151, 15);
+      doc.text("Quotation Ref", 151, 37);
       doc.setFont("times", "bold");
-      doc.setFontSize(12);
+      doc.setFontSize(11.5);
       doc.setTextColor(20, 20, 20);
-      doc.text(safe(quote.booking_reference), 151, 23);
+      doc.text(safe(quote.booking_reference), 151, 44);
 
-      doc.setFont("times", "normal");
-      doc.setFontSize(10.5);
-      doc.setTextColor(45, 45, 45);
-      doc.text(`Date: ${formatDate(quote.created_at)}`, 151, 34);
-      doc.text(`Status: ${safe(quote.quotation_status)}`, 151, 40);
+      let y = 58;
 
-      y = 36;
-
-      y = drawWrappedText(
-        doc,
-        "Dear Customer,",
-        14,
-        y,
-        180,
-        { size: 11.5, style: "bold", lineHeight: 5 }
-      ) + 2;
+      y = drawWrappedText(doc, "Dear Customer,", 14, y, 180, {
+        size: 11.5,
+        style: "bold",
+        lineHeight: 5,
+      }) + 2;
 
       y = drawWrappedText(
         doc,
@@ -321,23 +338,21 @@ export default function QuotationPdfPage() {
 
       y = drawWrappedText(
         doc,
-        "Should you have any questions or concerns, please feel free to reach out, we are always happy to assist you.",
+        "Should you have any questions or concerns, please feel free to reach out. We are always happy to assist you.",
         14,
         y,
         180,
         { size: 10.5, style: "normal", lineHeight: 5, color: [45, 45, 45] }
       ) + 8;
 
-      // Flights
       y = drawSectionHeading(doc, "Flights Details:", y);
       y = drawFlightTable(doc, y);
 
-      // Hotels
       y = drawSectionHeading(doc, "HOTEL DETAILS:", y);
 
-      const roomMealText = quote.meals_included ? "(Breakfast)" : "(Room Only)";
-      const makkahRoom = `${safe(quote.makkah_room_type)}\n${roomMealText}`;
-      const madinahRoom = `${safe(quote.madinah_room_type)}\n${roomMealText}`;
+      const mealLabel = quote.meals_included ? "(Breakfast)" : "(Room Only)";
+      const makkahRoom = `${safe(quote.makkah_room_type)}\n${mealLabel}`;
+      const madinahRoom = `${safe(quote.madinah_room_type)}\n${mealLabel}`;
 
       const makkahDate = `Check in: ${safe(quote.travel_date)}\nCheck Out: As per plan`;
       const madinahDate = `Check in: ${safe(quote.travel_date)}\nCheck Out: As per plan`;
@@ -364,7 +379,6 @@ export default function QuotationPdfPage() {
           y
         ) + 10;
 
-      // Total package
       doc.setFont("times", "bold");
       doc.setFontSize(13);
       doc.setTextColor(20, 20, 20);
@@ -387,7 +401,6 @@ export default function QuotationPdfPage() {
 
       y += 12;
 
-      // Exclusive offer
       doc.setFont("times", "bold");
       doc.setFontSize(12);
       doc.setTextColor(20, 20, 20);
@@ -409,7 +422,6 @@ export default function QuotationPdfPage() {
 
       y += offerLines.length * 5 + 10;
 
-      // Why book with us
       doc.setFont("times", "italic");
       doc.setFontSize(12.5);
       doc.setTextColor(0, 102, 204);
@@ -420,15 +432,26 @@ export default function QuotationPdfPage() {
       doc.setFont("times", "bold");
       doc.setFontSize(11);
       doc.setTextColor(20, 20, 20);
-      doc.text("• Every trip is customized to match your preferences, budget, and travel style.", 25, y);
+      doc.text(
+        "• Every trip is customized to match your preferences, budget, and travel style.",
+        25,
+        y
+      );
       y += 5;
-      doc.text("• Special rates and insider perks through our strong relationships with top travel providers.", 25, y);
+      doc.text(
+        "• Special rates and insider perks through our strong relationships with top travel providers.",
+        25,
+        y
+      );
       y += 5;
-      doc.text("• We're here for you before, during, and after your trip to handle any issues and ensure a smooth journey.", 25, y);
+      doc.text(
+        "• We're here for you before, during, and after your trip to handle any issues and ensure a smooth journey.",
+        25,
+        y
+      );
 
       y += 11;
 
-      // Agent signoff
       doc.setFont("times", "bold");
       doc.setFontSize(12);
       doc.setTextColor(20, 20, 20);
@@ -446,24 +469,55 @@ export default function QuotationPdfPage() {
       doc.setTextColor(20, 20, 20);
       doc.text("Travel Consultant", 17, y);
 
-      y += 12;
+      // QR code block
+      const qrUrl = "https://api.whatsapp.com/send?phone=447845733642";
+      const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+        margin: 1,
+        width: 220,
+      });
 
-      // Logos text footer style on page 1
+      doc.setDrawColor(200, 200, 200);
+      doc.rect(140, y - 12, 48, 48);
+      doc.addImage(qrDataUrl, "PNG", 145, y - 7, 24, 24);
+
       doc.setFont("times", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(40, 40, 40);
-      doc.text("MashaAllah Trips", 18, y);
-      doc.text("IATA", 82, y);
-      doc.text("ATOL", 104, y);
-      doc.text("Trustpilot", 129, y);
+      doc.setFontSize(10);
+      doc.setTextColor(20, 20, 20);
+      doc.text("Scan for WhatsApp", 143, y + 22);
 
-      // Page 2 terms
+      doc.setFont("times", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(80, 80, 80);
+      doc.text("+44 7845 733642", 148, y + 27);
+
+      y += 42;
+
+      // trust strip
+      doc.setFillColor(248, 248, 248);
+      doc.rect(14, y, 182, 18, "F");
+      doc.setDrawColor(210, 210, 210);
+      doc.rect(14, y, 182, 18);
+
+      doc.setFont("times", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(25, 25, 25);
+      doc.text("MashaAllah Trips", 18, y + 11);
+      doc.text("Trustpilot", 78, y + 11);
+      doc.text("IATA & ATOL Accredited", 125, y + 11);
+
+      // Page 2
       doc.addPage();
 
+      // soft kaaba watermark feel using transparent text block imitation
+      doc.setTextColor(245, 245, 245);
+      doc.setFont("times", "bold");
+      doc.setFontSize(60);
+      doc.text("UMRAH", 58, 120, { angle: 0 });
+
       let ty = 18;
+      doc.setTextColor(20, 20, 20);
       doc.setFont("times", "bold");
       doc.setFontSize(16);
-      doc.setTextColor(20, 20, 20);
       doc.text("Umrah Booking Terms Summary", 14, ty);
 
       ty += 11;
@@ -582,11 +636,12 @@ export default function QuotationPdfPage() {
                   style={styles.logoHtml}
                 />
               </div>
-              <div style={styles.brandSub}>Professional Umrah Quotation</div>
+              <div style={styles.brandSub}>Royal Umrah Proposal</div>
 
               <div style={styles.accreditationRow}>
                 <span style={styles.badgeGold}>IATA Accredited</span>
                 <span style={styles.badgeGold}>ATOL Accredited</span>
+                <span style={styles.badgeGold}>Trustpilot Trusted</span>
               </div>
             </div>
 
@@ -611,9 +666,9 @@ export default function QuotationPdfPage() {
 
           <section style={styles.heroStrip}>
             <div style={styles.heroLeft}>
-              <div style={styles.heroTitle}>Umrah Travel Proposal</div>
+              <div style={styles.heroTitle}>Umrah Package Proposal</div>
               <div style={styles.heroText}>
-                Thank you for choosing MashaAllah Trips. Please review the quotation details below.
+                A premium quotation prepared by MashaAllah Trips for your blessed journey.
               </div>
             </div>
 
@@ -777,12 +832,19 @@ export default function QuotationPdfPage() {
           </section>
 
           <section style={styles.section}>
-            <div style={styles.sectionTitle}>Kind Regards</div>
+            <div style={styles.sectionTitle}>Consultant</div>
             <div style={styles.notesBox}>
               <div style={{ fontWeight: 800, color: "#dc2626", marginBottom: 6 }}>
                 {agentName}
               </div>
               <div style={{ fontWeight: 700 }}>Travel Consultant</div>
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <div style={styles.sectionTitle}>WhatsApp QR</div>
+            <div style={styles.notesBox}>
+              Scan the downloadable PDF QR code to contact us directly on WhatsApp.
             </div>
           </section>
 
@@ -814,7 +876,7 @@ export default function QuotationPdfPage() {
               +44 204 5557 373 • www.mashaallahtrips.com • 13 Station Rd, London SE25 5AH, UK
             </div>
             <div style={styles.footerMini}>
-              IATA & ATOL Accredited • Premium Umrah Travel Services
+              IATA • ATOL • Trustpilot • Premium Umrah Travel Services
             </div>
           </footer>
         </div>
