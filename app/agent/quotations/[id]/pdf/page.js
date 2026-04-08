@@ -35,6 +35,15 @@ function safeFile(value) {
     .replace(/-+/g, "-");
 }
 
+const BRAND_LOGO =
+  "https://mashaallahtrips.com/wp-content/uploads/2026/01/cropped-Mashaallah-6-scaled-1.webp";
+const IATA_ATOL_LOGO =
+  "https://mashaallahtrips.com/wp-content/uploads/2026/04/iata-atol-logo-mashaallah-trips-.webp";
+const TRUSTPILOT_LOGO =
+  "https://mashaallahtrips.com/wp-content/uploads/2026/04/Trustpilot-logo-Mashaallah-trips-.webp";
+const WHATSAPP_QR =
+  "https://mashaallahtrips.com/wp-content/uploads/2026/04/wa.link_b7jw9k.webp";
+
 function InfoCard({ title, items }) {
   return (
     <div style={styles.infoCard}>
@@ -135,14 +144,8 @@ export default function QuotationPdfPage() {
 
   async function addPdfAssets(doc) {
     try {
-      const mainLogoUrl =
-        "https://mashaallahtrips.com/wp-content/uploads/2026/01/cropped-Mashaallah-6-scaled-1.webp";
-
-      const trustLogoUrl =
-        "https://mashaallahtrips.com/wp-content/uploads/2026/01/Iata-Atol-confidence-1-3.png";
-
-      await addImageFromUrl(doc, mainLogoUrl, "WEBP", 14, 8, 48, 16);
-      await addImageFromUrl(doc, trustLogoUrl, "PNG", 134, 8, 62, 18);
+      await addImageFromUrl(doc, BRAND_LOGO, "WEBP", 14, 8, 48, 16);
+      await addImageFromUrl(doc, IATA_ATOL_LOGO, "WEBP", 132, 8, 64, 18);
       return true;
     } catch (error) {
       return false;
@@ -292,7 +295,6 @@ export default function QuotationPdfPage() {
       const doc = new jsPDF("p", "mm", "a4");
       await addPdfAssets(doc);
 
-      // royal header
       doc.setFillColor(245, 238, 255);
       doc.rect(0, 28, 210, 22, "F");
 
@@ -306,7 +308,6 @@ export default function QuotationPdfPage() {
       doc.setTextColor(88, 88, 88);
       doc.text("Tailored by MashaAllah Trips for your sacred journey", 14, 47);
 
-      // reference box
       doc.setDrawColor(190, 190, 190);
       doc.rect(148, 31, 48, 18);
       doc.setFont("times", "normal");
@@ -471,16 +472,11 @@ export default function QuotationPdfPage() {
       doc.setTextColor(20, 20, 20);
       doc.text("Travel Consultant", 17, y);
 
-      // QR code using quickchart (no npm package needed)
-      const qrUrl = "https://api.whatsapp.com/send?phone=447845733642";
-      const qrImageUrl =
-        "https://quickchart.io/qr?text=" + encodeURIComponent(qrUrl) + "&size=220";
-
       doc.setDrawColor(200, 200, 200);
       doc.rect(140, y - 12, 48, 48);
 
       try {
-        await addImageFromUrl(doc, qrImageUrl, "PNG", 145, y - 7, 24, 24);
+        await addImageFromUrl(doc, WHATSAPP_QR, "WEBP", 145, y - 7, 24, 24);
       } catch (e) {
         doc.setFont("times", "normal");
         doc.setFontSize(8);
@@ -505,14 +501,16 @@ export default function QuotationPdfPage() {
       doc.setDrawColor(210, 210, 210);
       doc.rect(14, y, 182, 18);
 
+      try {
+        await addImageFromUrl(doc, TRUSTPILOT_LOGO, "WEBP", 76, y + 2, 34, 10);
+      } catch (e) {}
+
       doc.setFont("times", "bold");
       doc.setFontSize(11);
       doc.setTextColor(25, 25, 25);
       doc.text("MashaAllah Trips", 18, y + 11);
-      doc.text("Trustpilot", 78, y + 11);
-      doc.text("IATA & ATOL Accredited", 125, y + 11);
+      doc.text("IATA & ATOL", 145, y + 11);
 
-      // page 2
       doc.addPage();
 
       doc.setTextColor(245, 245, 245);
@@ -637,17 +635,24 @@ export default function QuotationPdfPage() {
             <div style={styles.headerLeft}>
               <div style={styles.logoHtmlWrap}>
                 <img
-                  src="https://mashaallahtrips.com/wp-content/uploads/2026/01/cropped-Mashaallah-6-scaled-1.webp"
+                  src={BRAND_LOGO}
                   alt="MashaAllah Trips"
                   style={styles.logoHtml}
                 />
               </div>
               <div style={styles.brandSub}>Royal Umrah Proposal</div>
 
-              <div style={styles.accreditationRow}>
-                <span style={styles.badgeGold}>IATA Accredited</span>
-                <span style={styles.badgeGold}>ATOL Accredited</span>
-                <span style={styles.badgeGold}>Trustpilot Trusted</span>
+              <div style={styles.trustLogoRow}>
+                <img
+                  src={IATA_ATOL_LOGO}
+                  alt="IATA ATOL"
+                  style={styles.trustLogoMain}
+                />
+                <img
+                  src={TRUSTPILOT_LOGO}
+                  alt="Trustpilot"
+                  style={styles.trustLogoSmall}
+                />
               </div>
             </div>
 
@@ -849,8 +854,42 @@ export default function QuotationPdfPage() {
 
           <section style={styles.section}>
             <div style={styles.sectionTitle}>WhatsApp QR</div>
-            <div style={styles.notesBox}>
-              Scan the downloadable PDF QR code to contact us directly on WhatsApp.
+            <div style={styles.qrCard}>
+              <img
+                src={WHATSAPP_QR}
+                alt="WhatsApp QR"
+                style={styles.qrPreview}
+              />
+              <div style={styles.qrTextBlock}>
+                <div style={styles.qrTitle}>Scan to Contact on WhatsApp</div>
+                <div style={styles.qrText}>
+                  Open WhatsApp instantly and connect with MashaAllah Trips.
+                </div>
+                <a
+                  href="https://api.whatsapp.com/send?phone=447845733642"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.qrLink}
+                >
+                  Open WhatsApp Chat
+                </a>
+              </div>
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <div style={styles.sectionTitle}>Trust & Accreditation</div>
+            <div style={styles.trustSectionBox}>
+              <img
+                src={IATA_ATOL_LOGO}
+                alt="IATA ATOL"
+                style={styles.trustSectionMainLogo}
+              />
+              <img
+                src={TRUSTPILOT_LOGO}
+                alt="Trustpilot"
+                style={styles.trustSectionTrustpilot}
+              />
             </div>
           </section>
 
@@ -976,23 +1015,22 @@ const styles = {
     color: "#6b7280",
     fontSize: "14px",
   },
-  accreditationRow: {
+  trustLogoRow: {
     display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-    marginTop: "4px",
-  },
-  badgeGold: {
-    display: "inline-flex",
     alignItems: "center",
-    justifyContent: "center",
-    padding: "7px 10px",
-    borderRadius: "999px",
-    background: "#fff7e6",
-    color: "#8a5b00",
-    border: "1px solid #f2d189",
-    fontWeight: 700,
-    fontSize: "12px",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginTop: "6px",
+  },
+  trustLogoMain: {
+    height: "40px",
+    width: "auto",
+    objectFit: "contain",
+  },
+  trustLogoSmall: {
+    height: "28px",
+    width: "auto",
+    objectFit: "contain",
   },
   headerRight: {
     display: "grid",
@@ -1207,6 +1245,72 @@ const styles = {
     whiteSpace: "pre-wrap",
     lineHeight: 1.7,
     fontSize: "14px",
+  },
+  qrCard: {
+    border: "1px solid #e5e7eb",
+    borderRadius: "16px",
+    background: "#fff",
+    padding: "16px",
+    display: "flex",
+    alignItems: "center",
+    gap: "18px",
+    flexWrap: "wrap",
+  },
+  qrPreview: {
+    width: "140px",
+    height: "140px",
+    objectFit: "contain",
+    borderRadius: "12px",
+    border: "1px solid #e5e7eb",
+    background: "#fff",
+  },
+  qrTextBlock: {
+    display: "grid",
+    gap: "8px",
+    flex: 1,
+    minWidth: "240px",
+  },
+  qrTitle: {
+    fontSize: "18px",
+    fontWeight: 800,
+  },
+  qrText: {
+    color: "#4b5563",
+    fontSize: "14px",
+    lineHeight: 1.6,
+  },
+  qrLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "fit-content",
+    padding: "10px 14px",
+    borderRadius: "12px",
+    background: "linear-gradient(90deg,#128c7e,#25d366)",
+    color: "#fff",
+    textDecoration: "none",
+    fontWeight: 700,
+  },
+  trustSectionBox: {
+    border: "1px solid #e5e7eb",
+    borderRadius: "16px",
+    background: "#fff",
+    padding: "18px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "18px",
+    flexWrap: "wrap",
+  },
+  trustSectionMainLogo: {
+    height: "58px",
+    width: "auto",
+    objectFit: "contain",
+  },
+  trustSectionTrustpilot: {
+    height: "38px",
+    width: "auto",
+    objectFit: "contain",
   },
   tcBox: {
     border: "1px solid #e5e7eb",
