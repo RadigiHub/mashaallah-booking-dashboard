@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import supabase from "@/lib/supabaseClient";
+import { supabase } from "../../../../lib/supabaseClient";
 
-export default function QuotationPDF() {
+export default function PDFPage() {
   const { id } = useParams();
   const [data, setData] = useState(null);
 
@@ -22,18 +22,18 @@ export default function QuotationPDF() {
     fetchData();
   }, [id]);
 
-  if (!data) return <div>Loading...</div>;
+  if (!data) return <div style={{ padding: 40 }}>Loading...</div>;
 
   return (
-    <div style={{ background: "#fff", padding: "30px", fontFamily: "Segoe UI" }}>
+    <div style={{ background: "#fff", padding: 30, fontFamily: "Segoe UI" }}>
 
       {/* HEADER */}
-      <div style={{ textAlign: "center", borderBottom: "3px solid #0a3d62", paddingBottom: "20px" }}>
+      <div style={{ textAlign: "center", borderBottom: "3px solid #0a3d62", paddingBottom: 20 }}>
         <img
           src="https://mashaallahtrips.com/wp-content/uploads/2026/01/Iata-Atol-confidence-1-3.png"
-          style={{ height: "60px" }}
+          style={{ height: 60 }}
         />
-        <h1 style={{ margin: "10px 0", color: "#0a3d62" }}>
+        <h1 style={{ color: "#0a3d62", marginTop: 10 }}>
           Umrah Package Proposal
         </h1>
         <p style={{ color: "#555" }}>
@@ -41,8 +41,8 @@ export default function QuotationPDF() {
         </p>
       </div>
 
-      {/* CONTENT */}
-      <div style={{ padding: "20px 0" }}>
+      {/* BODY */}
+      <div style={{ marginTop: 20 }}>
 
         <p><b>Quotation Ref:</b> {data.booking_reference}</p>
 
@@ -53,7 +53,7 @@ export default function QuotationPDF() {
 
         {/* FLIGHTS */}
         <h3>Flights Details</h3>
-        <table style={tableStyle}>
+        <table style={table}>
           <thead>
             <tr>
               <th style={th}>Date</th>
@@ -74,7 +74,7 @@ export default function QuotationPDF() {
 
         {/* HOTELS */}
         <h3>Hotel Details</h3>
-        <table style={tableStyle}>
+        <table style={table}>
           <thead>
             <tr>
               <th style={th}>City</th>
@@ -110,22 +110,22 @@ export default function QuotationPDF() {
         </p>
 
         {/* CONSULTANT */}
-        <div style={consultantBox}>
+        <div style={consultant}>
           <b>Consultant:</b> Shehroz Malik<br />
           Travel Consultant
         </div>
 
         {/* QR */}
-        <div style={{ textAlign: "center", marginTop: "20px" }}>
+        <div style={{ textAlign: "center", marginTop: 20 }}>
           <p><b>Scan to Contact on WhatsApp</b></p>
           <img
             src="https://mashaallahtrips.com/wp-content/uploads/2026/04/wa.link_b7jw9k.webp"
-            style={{ width: "120px" }}
+            style={{ width: 120 }}
           />
         </div>
 
         {/* TRUST */}
-        <div style={trustBox}>
+        <div style={trust}>
           <img src="https://mashaallahtrips.com/wp-content/uploads/2026/04/Trustpilot-logo-Mashaallah-trips-.webp" />
           <img src="https://mashaallahtrips.com/wp-content/uploads/2026/04/iata-atol-logo-mashaallah-trips-.webp" />
         </div>
@@ -143,51 +143,48 @@ export default function QuotationPDF() {
 
 /* STYLES */
 
-const tableStyle = {
+const table = {
   width: "100%",
   borderCollapse: "collapse",
-  marginTop: "10px"
+  marginTop: 10
 };
 
 const th = {
   background: "#0a3d62",
   color: "#fff",
-  padding: "10px",
-  fontSize: "13px"
+  padding: 10
 };
 
 const td = {
   border: "1px solid #ddd",
-  padding: "10px",
-  fontSize: "13px"
+  padding: 10
 };
 
 const priceBox = {
   background: "#f1f6fb",
-  padding: "15px",
+  padding: 15,
   borderLeft: "5px solid #0a3d62",
-  fontSize: "18px",
   fontWeight: "bold",
-  marginTop: "20px"
+  marginTop: 20
 };
 
-const consultantBox = {
-  marginTop: "20px",
-  padding: "15px",
+const consultant = {
+  marginTop: 20,
+  padding: 15,
   background: "#f9f9f9",
-  borderRadius: "10px"
+  borderRadius: 10
 };
 
-const trustBox = {
+const trust = {
   display: "flex",
   justifyContent: "space-between",
-  marginTop: "20px"
+  marginTop: 20
 };
 
 const footer = {
   textAlign: "center",
-  fontSize: "12px",
-  marginTop: "30px",
+  marginTop: 30,
+  fontSize: 12,
   borderTop: "1px solid #ddd",
-  paddingTop: "10px"
+  paddingTop: 10
 };
