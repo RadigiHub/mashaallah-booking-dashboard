@@ -43,28 +43,6 @@ function safeFile(v) {
     .replace(/-+/g, "-");
 }
 
-function wrapText(doc, text, x, y, maxWidth, lineHeight = 5) {
-  const lines = doc.splitTextToSize(String(text || "—"), maxWidth);
-  doc.text(lines, x, y);
-  return y + lines.length * lineHeight;
-}
-
-async function blobToBase64(blob) {
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function addImageFromUrl(doc, url, format, x, y, w, h) {
-  const res = await fetch(url);
-  const blob = await res.blob();
-  const base64 = await blobToBase64(blob);
-  doc.addImage(base64, format, x, y, w, h);
-}
-
 function InfoBox({ title, rows }) {
   return (
     <div style={sheetStyles.infoCard}>
@@ -79,6 +57,30 @@ function InfoBox({ title, rows }) {
       </div>
     </div>
   );
+}
+
+async function loadHtml2Canvas() {
+  if (window.html2canvas) return window.html2canvas;
+
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-html2canvas="true"]');
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    script.async = true;
+    script.setAttribute("data-html2canvas", "true");
+    script.onload = resolve;
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+
+  return window.html2canvas;
 }
 
 export default function QuotationPdfPage() {
@@ -141,473 +143,50 @@ export default function QuotationPdfPage() {
   }
 
   async function handleDownloadPdf() {
-    if (!quote) return;
+    if (!pageRef.current) return;
 
     try {
       setDownloading(true);
 
-      const doc = new jsPDF("p", "mm", "a4");
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 14;
-      const contentWidth = pageWidth - margin * 2;
-      let y = 14;
+      const html2canvas = await loadHtml2Canvas();
 
-      // Header logos
-      try {
-        await addImageFromUrl(doc, BRAND_LOGO, "WEBP", margin, y, 48, 15);
-      } catch {}
-      try {
-        await addImageFromUrl(doc, TRUSTPILOT_LOGO, "WEBP", margin, y + 18, 26, 7);
-      } catch {}
-      try {
-        await addImageFromUrl(doc, IATA_ATOL_LOGO, "WEBP", pageWidth - margin - 22, y + 16, 22, 9);
-      } catch {}
-
-      // Ref box
-      doc.setDrawColor(196, 206, 220);
-      doc.setFillColor(248, 251, 255);
-      doc.roundedRect(pageWidth - margin - 52, y, 52, 24, 3, 3, "FD");
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(90, 107, 130);
-      doc.text("Quotation Ref", pageWidth - margin - 48, y + 7);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(8, 25, 53);
-      doc.text(safe(quote.booking_reference), pageWidth - margin - 48, y + 16);
-
-      y += 34;
-
-      // Proposal band
-      doc.setDrawColor(11, 71, 114);
-      doc.setFillColor(247, 245, 250);
-      doc.rect(margin, y, contentWidth, 24, "FD");
-      doc.line(margin, y, margin + contentWidth, y);
-      doc.line(margin, y + 24, margin + contentWidth, y + 24);
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(17);
-      doc.setTextColor(11, 71, 114);
-      doc.text("Umrah Package Proposal", pageWidth / 2, y + 11, { align: "center" });
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(71, 85, 105);
-      doc.text("Premium Travel Experience by MashaAllah Trips", pageWidth / 2, y + 19, {
-        align: "center",
+      const canvas = await html2canvas(pageRef.current, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: "#ffffff",
+        logging: false,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        windowWidth: document.documentElement.scrollWidth,
       });
 
-      y += 34;
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(15, 23, 42);
-      doc.text(`Status: ${safe(quote.quotation_status)}`, margin, y);
-      doc.text(`Date: ${formatDate(quote.created_at)}`, pageWidth - margin, y, { align: "right" });
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const margin = 8;
+      const printableWidth = pdfWidth - margin * 2;
+      const printableHeight = pdfHeight - margin * 2;
 
-      y += 10;
+      const imgWidth = printableWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10.5);
-      doc.text("Dear Customer,", margin, y);
+      let heightLeft = imgHeight;
+      let position = margin;
 
-      y += 8;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10.5);
-      doc.setTextColor(51, 65, 85);
-      y = wrapText(
-        doc,
-        "We are pleased to present your Umrah quotation with carefully selected flights, hotel stay, services, and pricing. Please review the proposal below.",
-        margin,
-        y,
-        contentWidth,
-        5
-      );
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, "", "FAST");
+      heightLeft -= printableHeight;
 
-      y += 10;
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, "", "FAST");
+        heightLeft -= printableHeight;
+      }
 
-      // Section helper
-      const sectionTitle = (title) => {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.setTextColor(15, 23, 42);
-        doc.text(title, margin, y);
-        y += 6;
-      };
-
-      const drawBoxTitle = (x, topY, w, title) => {
-        doc.setFillColor(11, 71, 114);
-        doc.setTextColor(255, 255, 255);
-        doc.roundedRect(x, topY, w, 10, 3, 3, "F");
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(10);
-        doc.text(title, x + 4, topY + 6.5);
-      };
-
-      const drawInfoBox = (x, topY, w, title, rows) => {
-        const boxHeight = 58;
-        doc.setDrawColor(219, 228, 239);
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(x, topY, w, boxHeight, 4, 4, "FD");
-        drawBoxTitle(x, topY, w, title);
-
-        let rowY = topY + 16;
-        rows.forEach(([label, value], i) => {
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(8);
-          doc.setTextColor(100, 116, 139);
-          doc.text(label, x + 4, rowY);
-
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(15, 23, 42);
-          const wrapped = doc.splitTextToSize(String(value || "—"), w - 8);
-          doc.text(wrapped, x + 4, rowY + 5);
-
-          rowY += 13;
-          if (i < rows.length - 1) {
-            doc.setDrawColor(238, 242, 247);
-            doc.line(x + 3, rowY - 3, x + w - 3, rowY - 3);
-          }
-        });
-
-        return boxHeight;
-      };
-
-      // Client details
-      sectionTitle("Client Details");
-      const halfGap = 4;
-      const halfWidth = (contentWidth - halfGap) / 2;
-
-      drawInfoBox(margin, y, halfWidth, "Client Information", [
-        ["Client Name", safe(quote.client_name)],
-        ["Phone", safe(quote.client_phone)],
-        ["Email", safe(quote.client_email)],
-        ["Departure City", safe(quote.departure_city)],
-      ]);
-
-      drawInfoBox(margin + halfWidth + halfGap, y, halfWidth, "Travellers", [
-        ["Adults", safe(quote.adults)],
-        ["Children", safe(quote.children)],
-        ["Infants", safe(quote.infants)],
-        ["Travel Date", safe(quote.travel_date)],
-      ]);
-
-      y += 68;
-
-      // Flights
-      sectionTitle("Flights Details");
-
-      const flightCols = [24, 20, 30, 50, 50, 18];
-      const flightHeaders = ["Date", "Flight", "Carrier", "Departs", "Arrives", "Duration"];
-      const flightValues = [
-        safe(quote.travel_date),
-        "—",
-        safe(quote.airline),
-        safe(quote.outbound_sector),
-        safe(quote.return_sector),
-        "—",
-      ];
-
-      let fx = margin;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      flightHeaders.forEach((h, i) => {
-        doc.setFillColor(11, 71, 114);
-        doc.setTextColor(255, 255, 255);
-        doc.rect(fx, y, flightCols[i], 9, "F");
-        doc.text(h, fx + flightCols[i] / 2, y + 5.8, { align: "center" });
-        fx += flightCols[i];
-      });
-
-      y += 9;
-      fx = margin;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      flightValues.forEach((v, i) => {
-        doc.setDrawColor(216, 224, 234);
-        doc.setFillColor(255, 255, 255);
-        doc.rect(fx, y, flightCols[i], 11, "FD");
-        doc.setTextColor(15, 23, 42);
-        const lines = doc.splitTextToSize(String(v || "—"), flightCols[i] - 4);
-        doc.text(lines, fx + 2, y + 4.8);
-        fx += flightCols[i];
-      });
-
-      y += 19;
-
-      // Hotels
-      sectionTitle("Hotel Details");
-
-      const hotelCols = [45, 45, 45, 33];
-      const hotelHeaders1 = ["Makkah Hotel", "Room Type", "Distance", "No. Of Nights"];
-      const hotelValues1 = [
-        safe(quote.makkah_hotel_name),
-        safe(quote.makkah_room_type),
-        safe(quote.makkah_distance),
-        safe(quote.makkah_nights),
-      ];
-
-      let hx = margin;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      hotelHeaders1.forEach((h, i) => {
-        doc.setFillColor(47, 117, 181);
-        doc.setTextColor(255, 255, 255);
-        doc.rect(hx, y, hotelCols[i], 9, "F");
-        doc.text(h, hx + hotelCols[i] / 2, y + 5.8, { align: "center" });
-        hx += hotelCols[i];
-      });
-
-      y += 9;
-      hx = margin;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      hotelValues1.forEach((v, i) => {
-        doc.setDrawColor(216, 224, 234);
-        doc.setFillColor(255, 255, 255);
-        doc.rect(hx, y, hotelCols[i], 11, "FD");
-        doc.setTextColor(15, 23, 42);
-        const lines = doc.splitTextToSize(String(v || "—"), hotelCols[i] - 4);
-        doc.text(lines, hx + 2, y + 4.8);
-        hx += hotelCols[i];
-      });
-
-      y += 16;
-
-      const hotelHeaders2 = ["Madinah Hotel", "Room Type", "Distance", "No. Of Nights"];
-      const hotelValues2 = [
-        safe(quote.madinah_hotel_name),
-        safe(quote.madinah_room_type),
-        safe(quote.madinah_distance),
-        safe(quote.madinah_nights),
-      ];
-
-      hx = margin;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      hotelHeaders2.forEach((h, i) => {
-        doc.setFillColor(47, 117, 181);
-        doc.setTextColor(255, 255, 255);
-        doc.rect(hx, y, hotelCols[i], 9, "F");
-        doc.text(h, hx + hotelCols[i] / 2, y + 5.8, { align: "center" });
-        hx += hotelCols[i];
-      });
-
-      y += 9;
-      hx = margin;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      hotelValues2.forEach((v, i) => {
-        doc.setDrawColor(216, 224, 234);
-        doc.setFillColor(255, 255, 255);
-        doc.rect(hx, y, hotelCols[i], 11, "FD");
-        doc.setTextColor(15, 23, 42);
-        const lines = doc.splitTextToSize(String(v || "—"), hotelCols[i] - 4);
-        doc.text(lines, hx + 2, y + 4.8);
-        hx += hotelCols[i];
-      });
-
-      y += 20;
-
-      // Price
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(17, 24, 39);
-      doc.text("Total Package includes Flights, Hotels and Visa:", margin, y);
-
-      y += 10;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("Total Price:", margin, y);
-
-      const priceText = formatCurrency(quote.total_price);
-      const priceWidth = doc.getTextWidth(priceText) + 6;
-      doc.setFillColor(255, 242, 0);
-      doc.rect(margin + 30, y - 5, priceWidth, 7, "F");
-      doc.text(priceText, margin + 33, y);
-      doc.setFont("helvetica", "normal");
-      doc.text("including all.", margin + 33 + priceWidth, y);
-
-      y += 12;
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(220, 38, 38);
-      wrapText(
-        doc,
-        `BOOK NOW & PAY LATER — Pay ${formatCurrency(
-          quote.deposit_amount
-        )} now, rest in easy instalments.`,
-        margin,
-        y,
-        contentWidth,
-        5
-      );
-
-      y += 14;
-
-      // Why
-      doc.setFont("times", "italic");
-      doc.setFontSize(12);
-      doc.setTextColor(0, 102, 204);
-      doc.text("Why you should book with Us:", margin, y);
-
-      y += 7;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10.5);
-      doc.setTextColor(17, 24, 39);
-      wrapText(
-        doc,
-        "• Every trip is customized to match your preferences, budget, and travel style.",
-        margin + 5,
-        y,
-        contentWidth - 5,
-        5
-      );
-      y += 6;
-      wrapText(
-        doc,
-        "• Special rates and insider perks through trusted supplier relationships.",
-        margin + 5,
-        y,
-        contentWidth - 5,
-        5
-      );
-      y += 6;
-      wrapText(
-        doc,
-        "• Support before, during, and after your journey for a smooth Umrah experience.",
-        margin + 5,
-        y,
-        contentWidth - 5,
-        5
-      );
-
-      y += 12;
-
-      // Consultant + QR
-      const leftBoxW = 112;
-      const rightBoxW = contentWidth - leftBoxW - 6;
-
-      doc.setDrawColor(219, 228, 239);
-      doc.setFillColor(252, 252, 253);
-      doc.roundedRect(margin, y, leftBoxW, 34, 4, 4, "FD");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(17, 24, 39);
-      doc.text("Kind Regards,", margin + 6, y + 9);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(220, 38, 38);
-      doc.setFontSize(16);
-      doc.text(agentName, margin + 6, y + 18);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(17, 24, 39);
-      doc.setFontSize(11);
-      doc.text("Travel Consultant", margin + 6, y + 26);
-
-      doc.setDrawColor(219, 228, 239);
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(margin + leftBoxW + 6, y, rightBoxW, 34, 4, 4, "FD");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("Scan to Contact on WhatsApp", margin + leftBoxW + 12, y + 8);
-
-      try {
-        await addImageFromUrl(doc, WHATSAPP_QR, "WEBP", margin + leftBoxW + 18, y + 10, 18, 18);
-      } catch {}
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(71, 85, 105);
-      wrapText(
-        doc,
-        "Quick direct contact with MashaAllah Trips",
-        margin + leftBoxW + 42,
-        y + 18,
-        rightBoxW - 48,
-        4.5
-      );
-
-      y += 44;
-
-      // Trust logos bottom
-      try {
-        await addImageFromUrl(doc, TRUSTPILOT_LOGO, "WEBP", margin, y, 34, 10);
-      } catch {}
-      try {
-        await addImageFromUrl(doc, IATA_ATOL_LOGO, "WEBP", pageWidth - margin - 34, y - 1, 34, 12);
-      } catch {}
-
-      y += 18;
-
-      // Page 2
-      doc.addPage();
-      y = 16;
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(15);
-      doc.setTextColor(15, 23, 42);
-      doc.text("Notes", margin, y);
-
-      y += 8;
-      doc.setDrawColor(219, 228, 239);
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(margin, y, contentWidth, 44, 4, 4, "FD");
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(17, 24, 39);
-      wrapText(doc, safe(quote.notes), margin + 5, y + 8, contentWidth - 10, 5);
-
-      y += 56;
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(15);
-      doc.text("Terms & Conditions", margin, y);
-
-      y += 8;
-      doc.setDrawColor(219, 228, 239);
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(margin, y, contentWidth, 92, 4, 4, "FD");
-
-      const terms = [
-        "All quotations are subject to availability at the time of booking confirmation.",
-        "Prices may change until flights, hotels, transport and all services are fully confirmed.",
-        "Deposit payments may be non-refundable or partially refundable depending on supplier terms.",
-        "Visa approval is subject to the rules and final decision of the relevant authorities.",
-        "Flight timings, baggage allowance and routing may change as per airline operational updates.",
-        "Hotel distance, room type and star rating remain subject to final booking confirmation.",
-        "Full balance must be paid before travel as per agreed payment schedule.",
-        "Special requests are not guaranteed unless confirmed in final booking documents.",
-      ];
-
-      let ty = y + 10;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(17, 24, 39);
-
-      terms.forEach((term) => {
-        const lines = doc.splitTextToSize(`• ${term}`, contentWidth - 12);
-        doc.text(lines, margin + 6, ty);
-        ty += lines.length * 5 + 2;
-      });
-
-      doc.setDrawColor(219, 228, 239);
-      doc.line(margin, 282, pageWidth - margin, 282);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(15, 23, 42);
-      doc.text("MashaAllah Trips", margin, 288);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(71, 85, 105);
-      doc.text(
-        "+44 204 5557 373 • www.mashaallahtrips.com • 13 Station Rd, London SE25 5AH, UK",
-        pageWidth - margin,
-        288,
-        { align: "right" }
-      );
-
-      doc.save(`quotation-${safeFile(quote.booking_reference)}.pdf`);
+      pdf.save(`quotation-${safeFile(quote?.booking_reference)}.pdf`);
     } catch (err) {
       console.error(err);
       alert("Download PDF failed.");
@@ -666,7 +245,13 @@ export default function QuotationPdfPage() {
         <div ref={pageRef} className="pdf-sheet" style={sheetStyles.sheet}>
           <div style={sheetStyles.header}>
             <div style={sheetStyles.headerTop}>
-              <img src={BRAND_LOGO} alt="MashaAllah Trips" style={sheetStyles.brandLogo} />
+              <img
+                src={BRAND_LOGO}
+                alt="MashaAllah Trips"
+                crossOrigin="anonymous"
+                style={sheetStyles.brandLogo}
+              />
+
               <div style={sheetStyles.headerRight}>
                 <div style={sheetStyles.refBox}>
                   <div style={sheetStyles.refLabel}>Quotation Ref</div>
@@ -676,8 +261,18 @@ export default function QuotationPdfPage() {
             </div>
 
             <div style={sheetStyles.trustRowTop}>
-              <img src={TRUSTPILOT_LOGO} alt="Trustpilot" style={sheetStyles.trustpilotTop} />
-              <img src={IATA_ATOL_LOGO} alt="IATA ATOL" style={sheetStyles.iataTop} />
+              <img
+                src={TRUSTPILOT_LOGO}
+                alt="Trustpilot"
+                crossOrigin="anonymous"
+                style={sheetStyles.trustpilotTop}
+              />
+              <img
+                src={IATA_ATOL_LOGO}
+                alt="IATA ATOL"
+                crossOrigin="anonymous"
+                style={sheetStyles.iataTop}
+              />
             </div>
 
             <div style={sheetStyles.royalBand}>
@@ -830,7 +425,12 @@ export default function QuotationPdfPage() {
 
               <div style={sheetStyles.qrCard}>
                 <div style={sheetStyles.qrTitle}>Scan to Contact on WhatsApp</div>
-                <img src={WHATSAPP_QR} alt="WhatsApp QR" style={sheetStyles.qrImg} />
+                <img
+                  src={WHATSAPP_QR}
+                  alt="WhatsApp QR"
+                  crossOrigin="anonymous"
+                  style={sheetStyles.qrImg}
+                />
                 <div style={sheetStyles.qrCaption}>Quick direct contact with MashaAllah Trips</div>
               </div>
             </div>
@@ -941,8 +541,8 @@ const uiStyles = {
 
 const sheetStyles = {
   sheet: {
-    width: "100%",
-    maxWidth: 1080,
+    width: "794px",
+    maxWidth: "794px",
     margin: "0 auto",
     background: "#ffffff",
     color: "#0f172a",
@@ -951,7 +551,7 @@ const sheetStyles = {
     overflow: "hidden",
   },
   header: {
-    padding: "26px 30px 0",
+    padding: "22px 22px 0",
   },
   headerTop: {
     display: "flex",
@@ -962,17 +562,17 @@ const sheetStyles = {
   },
   brandLogo: {
     width: "auto",
-    height: 62,
+    height: 54,
     objectFit: "contain",
   },
   headerRight: {
-    minWidth: 260,
+    minWidth: 220,
   },
   refBox: {
     border: "1px solid #dbe4ef",
     background: "#f8fbff",
     borderRadius: 14,
-    padding: "14px 16px",
+    padding: "12px 14px",
   },
   refLabel: {
     fontSize: 12,
@@ -980,7 +580,7 @@ const sheetStyles = {
     marginBottom: 4,
   },
   refValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 800,
     color: "#0f172a",
   },
@@ -990,59 +590,59 @@ const sheetStyles = {
     alignItems: "center",
     gap: 16,
     flexWrap: "wrap",
-    marginTop: 12,
-    paddingBottom: 12,
+    marginTop: 10,
+    paddingBottom: 10,
   },
   trustpilotTop: {
-    height: 32,
+    height: 24,
     width: "auto",
     objectFit: "contain",
   },
   iataTop: {
-    height: 40,
+    height: 28,
     width: "auto",
     objectFit: "contain",
   },
   royalBand: {
     textAlign: "center",
-    padding: "18px 16px 20px",
+    padding: "16px 16px 18px",
     borderTop: "2px solid #0b4772",
     borderBottom: "2px solid #0b4772",
     background: "linear-gradient(90deg,#f7fbff,#fff8fc)",
   },
   proposalTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 900,
     color: "#0b4772",
     marginBottom: 6,
   },
   proposalSub: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#475569",
   },
   section: {
-    padding: "22px 30px 0",
+    padding: "18px 22px 0",
   },
   metaLine: {
     display: "flex",
     justifyContent: "space-between",
     gap: 12,
     flexWrap: "wrap",
-    fontSize: 14,
+    fontSize: 13,
     color: "#334155",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   para: {
     margin: "0 0 10px",
     color: "#334155",
-    lineHeight: 1.6,
-    fontSize: 14,
+    lineHeight: 1.5,
+    fontSize: 13,
   },
   sectionHeading: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 800,
     color: "#0f172a",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   twoColGrid: {
     display: "grid",
@@ -1051,8 +651,8 @@ const sheetStyles = {
   },
   bottomGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 320px",
-    gap: 18,
+    gridTemplateColumns: "1fr 250px",
+    gap: 16,
     alignItems: "stretch",
   },
   infoCard: {
@@ -1065,24 +665,24 @@ const sheetStyles = {
     background: "#0b4772",
     color: "#fff",
     fontWeight: 700,
-    padding: "11px 14px",
-    fontSize: 14,
+    padding: "10px 14px",
+    fontSize: 13,
   },
   infoCardBody: {
-    padding: "10px 14px",
+    padding: "8px 14px",
   },
   infoRow: {
     display: "grid",
     gap: 4,
-    padding: "9px 0",
+    padding: "8px 0",
     borderBottom: "1px solid #eef2f7",
   },
   infoLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#64748b",
   },
   infoValue: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#0f172a",
     fontWeight: 600,
     whiteSpace: "pre-wrap",
@@ -1093,34 +693,36 @@ const sheetStyles = {
     borderCollapse: "collapse",
     border: "1px solid #d8e0ea",
     marginBottom: 0,
+    tableLayout: "fixed",
   },
   th: {
     background: "#0b4772",
     color: "#fff",
     fontWeight: 700,
-    fontSize: 13,
-    padding: "10px 8px",
+    fontSize: 12,
+    padding: "8px 6px",
     border: "1px solid #0b4772",
     textAlign: "center",
   },
   td: {
     border: "1px solid #d8e0ea",
-    padding: "10px 8px",
-    fontSize: 13,
+    padding: "8px 6px",
+    fontSize: 12,
     color: "#0f172a",
     verticalAlign: "top",
+    wordBreak: "break-word",
   },
   packageInclude: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 800,
     color: "#111827",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   priceHighlight: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 700,
     color: "#111827",
-    marginBottom: 14,
+    marginBottom: 12,
   },
   priceChip: {
     background: "#fff176",
@@ -1129,45 +731,45 @@ const sheetStyles = {
     borderRadius: 4,
   },
   offerText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 800,
     color: "#dc2626",
     lineHeight: 1.5,
   },
   whyHeading: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 800,
     color: "#0b4772",
     fontStyle: "italic",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   bulletList: {
     margin: 0,
-    paddingLeft: 22,
-    lineHeight: 1.8,
+    paddingLeft: 20,
+    lineHeight: 1.7,
     color: "#111827",
-    fontSize: 15,
+    fontSize: 13,
   },
   consultantCard: {
     border: "1px solid #dbe4ef",
     borderRadius: 14,
     background: "#fcfcfd",
-    padding: 18,
+    padding: 16,
   },
   consultantLabel: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: 700,
-    marginBottom: 10,
+    marginBottom: 8,
     color: "#111827",
   },
   consultantName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 900,
     color: "#dc2626",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   consultantRole: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 700,
     color: "#111827",
   },
@@ -1175,34 +777,34 @@ const sheetStyles = {
     border: "1px solid #dbe4ef",
     borderRadius: 14,
     background: "#ffffff",
-    padding: 18,
+    padding: 16,
     textAlign: "center",
   },
   qrTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 800,
     color: "#0f172a",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   qrImg: {
-    width: 150,
-    height: 150,
+    width: 120,
+    height: 120,
     objectFit: "contain",
     display: "block",
-    margin: "0 auto 10px",
+    margin: "0 auto 8px",
   },
   qrCaption: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#475569",
-    lineHeight: 1.5,
+    lineHeight: 1.4,
   },
   notesBox: {
     border: "1px solid #dbe4ef",
     borderRadius: 14,
     background: "#ffffff",
-    padding: 16,
-    fontSize: 14,
-    lineHeight: 1.7,
+    padding: 14,
+    fontSize: 12,
+    lineHeight: 1.6,
     color: "#111827",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
@@ -1211,29 +813,29 @@ const sheetStyles = {
     border: "1px solid #dbe4ef",
     borderRadius: 14,
     background: "#ffffff",
-    padding: 16,
+    padding: 14,
   },
   termList: {
     margin: 0,
-    paddingLeft: 22,
-    lineHeight: 1.8,
+    paddingLeft: 20,
+    lineHeight: 1.7,
     color: "#111827",
-    fontSize: 14,
+    fontSize: 12,
   },
   footer: {
-    marginTop: 24,
-    padding: "20px 30px 26px",
+    marginTop: 20,
+    padding: "18px 22px 22px",
     borderTop: "1px solid #dbe4ef",
   },
   footerBrand: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 900,
     color: "#0f172a",
     marginBottom: 6,
     textAlign: "center",
   },
   footerText: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#475569",
     textAlign: "center",
   },
@@ -1242,7 +844,7 @@ const sheetStyles = {
 const printStyles = `
   @page {
     size: A4;
-    margin: 10mm;
+    margin: 8mm;
   }
 
   html, body {
@@ -1266,8 +868,8 @@ const printStyles = `
     .pdf-sheet {
       box-shadow: none !important;
       border-radius: 0 !important;
-      max-width: 100% !important;
       width: 100% !important;
+      max-width: 100% !important;
     }
   }
 `;
