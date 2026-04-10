@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
+import jsPDF from "jspdf";
 
 const BRAND_LOGO =
   "https://mashaallahtrips.com/wp-content/uploads/2026/01/cropped-Mashaallah-6-scaled-1.webp";
@@ -36,12 +37,58 @@ function yesNo(v) {
   return v ? "Yes" : "No";
 }
 
+function safeFile(v) {
+  return String(v || "quotation")
+    .replace(/[^a-zA-Z0-9-_]/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function wrapText(doc, text, x, y, maxWidth, lineHeight = 5) {
+  const lines = doc.splitTextToSize(String(text || "—"), maxWidth);
+  doc.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+async function blobToBase64(blob) {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function addImageFromUrl(doc, url, format, x, y, w, h) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const base64 = await blobToBase64(blob);
+  doc.addImage(base64, format, x, y, w, h);
+}
+
+function InfoBox({ title, rows }) {
+  return (
+    <div style={sheetStyles.infoCard}>
+      <div style={sheetStyles.infoCardTitle}>{title}</div>
+      <div style={sheetStyles.infoCardBody}>
+        {rows.map(([label, value]) => (
+          <div key={label} style={sheetStyles.infoRow}>
+            <div style={sheetStyles.infoLabel}>{label}</div>
+            <div style={sheetStyles.infoValue}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function QuotationPdfPage() {
   const params = useParams();
   const router = useRouter();
   const quotationId = params?.id;
+  const pageRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [quote, setQuote] = useState(null);
   const [agentName, setAgentName] = useState("Travel Consultant");
   const [errorText, setErrorText] = useState("");
@@ -93,6 +140,482 @@ export default function QuotationPdfPage() {
     window.print();
   }
 
+  async function handleDownloadPdf() {
+    if (!quote) return;
+
+    try {
+      setDownloading(true);
+
+      const doc = new jsPDF("p", "mm", "a4");
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 14;
+      const contentWidth = pageWidth - margin * 2;
+      let y = 14;
+
+      // Header logos
+      try {
+        await addImageFromUrl(doc, BRAND_LOGO, "WEBP", margin, y, 48, 15);
+      } catch {}
+      try {
+        await addImageFromUrl(doc, TRUSTPILOT_LOGO, "WEBP", margin, y + 18, 26, 7);
+      } catch {}
+      try {
+        await addImageFromUrl(doc, IATA_ATOL_LOGO, "WEBP", pageWidth - margin - 22, y + 16, 22, 9);
+      } catch {}
+
+      // Ref box
+      doc.setDrawColor(196, 206, 220);
+      doc.setFillColor(248, 251, 255);
+      doc.roundedRect(pageWidth - margin - 52, y, 52, 24, 3, 3, "FD");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(90, 107, 130);
+      doc.text("Quotation Ref", pageWidth - margin - 48, y + 7);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(8, 25, 53);
+      doc.text(safe(quote.booking_reference), pageWidth - margin - 48, y + 16);
+
+      y += 34;
+
+      // Proposal band
+      doc.setDrawColor(11, 71, 114);
+      doc.setFillColor(247, 245, 250);
+      doc.rect(margin, y, contentWidth, 24, "FD");
+      doc.line(margin, y, margin + contentWidth, y);
+      doc.line(margin, y + 24, margin + contentWidth, y + 24);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(17);
+      doc.setTextColor(11, 71, 114);
+      doc.text("Umrah Package Proposal", pageWidth / 2, y + 11, { align: "center" });
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(71, 85, 105);
+      doc.text("Premium Travel Experience by MashaAllah Trips", pageWidth / 2, y + 19, {
+        align: "center",
+      });
+
+      y += 34;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Status: ${safe(quote.quotation_status)}`, margin, y);
+      doc.text(`Date: ${formatDate(quote.created_at)}`, pageWidth - margin, y, { align: "right" });
+
+      y += 10;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.text("Dear Customer,", margin, y);
+
+      y += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.5);
+      doc.setTextColor(51, 65, 85);
+      y = wrapText(
+        doc,
+        "We are pleased to present your Umrah quotation with carefully selected flights, hotel stay, services, and pricing. Please review the proposal below.",
+        margin,
+        y,
+        contentWidth,
+        5
+      );
+
+      y += 10;
+
+      // Section helper
+      const sectionTitle = (title) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        doc.setTextColor(15, 23, 42);
+        doc.text(title, margin, y);
+        y += 6;
+      };
+
+      const drawBoxTitle = (x, topY, w, title) => {
+        doc.setFillColor(11, 71, 114);
+        doc.setTextColor(255, 255, 255);
+        doc.roundedRect(x, topY, w, 10, 3, 3, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.text(title, x + 4, topY + 6.5);
+      };
+
+      const drawInfoBox = (x, topY, w, title, rows) => {
+        const boxHeight = 58;
+        doc.setDrawColor(219, 228, 239);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x, topY, w, boxHeight, 4, 4, "FD");
+        drawBoxTitle(x, topY, w, title);
+
+        let rowY = topY + 16;
+        rows.forEach(([label, value], i) => {
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(label, x + 4, rowY);
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.setTextColor(15, 23, 42);
+          const wrapped = doc.splitTextToSize(String(value || "—"), w - 8);
+          doc.text(wrapped, x + 4, rowY + 5);
+
+          rowY += 13;
+          if (i < rows.length - 1) {
+            doc.setDrawColor(238, 242, 247);
+            doc.line(x + 3, rowY - 3, x + w - 3, rowY - 3);
+          }
+        });
+
+        return boxHeight;
+      };
+
+      // Client details
+      sectionTitle("Client Details");
+      const halfGap = 4;
+      const halfWidth = (contentWidth - halfGap) / 2;
+
+      drawInfoBox(margin, y, halfWidth, "Client Information", [
+        ["Client Name", safe(quote.client_name)],
+        ["Phone", safe(quote.client_phone)],
+        ["Email", safe(quote.client_email)],
+        ["Departure City", safe(quote.departure_city)],
+      ]);
+
+      drawInfoBox(margin + halfWidth + halfGap, y, halfWidth, "Travellers", [
+        ["Adults", safe(quote.adults)],
+        ["Children", safe(quote.children)],
+        ["Infants", safe(quote.infants)],
+        ["Travel Date", safe(quote.travel_date)],
+      ]);
+
+      y += 68;
+
+      // Flights
+      sectionTitle("Flights Details");
+
+      const flightCols = [24, 20, 30, 50, 50, 18];
+      const flightHeaders = ["Date", "Flight", "Carrier", "Departs", "Arrives", "Duration"];
+      const flightValues = [
+        safe(quote.travel_date),
+        "—",
+        safe(quote.airline),
+        safe(quote.outbound_sector),
+        safe(quote.return_sector),
+        "—",
+      ];
+
+      let fx = margin;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      flightHeaders.forEach((h, i) => {
+        doc.setFillColor(11, 71, 114);
+        doc.setTextColor(255, 255, 255);
+        doc.rect(fx, y, flightCols[i], 9, "F");
+        doc.text(h, fx + flightCols[i] / 2, y + 5.8, { align: "center" });
+        fx += flightCols[i];
+      });
+
+      y += 9;
+      fx = margin;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      flightValues.forEach((v, i) => {
+        doc.setDrawColor(216, 224, 234);
+        doc.setFillColor(255, 255, 255);
+        doc.rect(fx, y, flightCols[i], 11, "FD");
+        doc.setTextColor(15, 23, 42);
+        const lines = doc.splitTextToSize(String(v || "—"), flightCols[i] - 4);
+        doc.text(lines, fx + 2, y + 4.8);
+        fx += flightCols[i];
+      });
+
+      y += 19;
+
+      // Hotels
+      sectionTitle("Hotel Details");
+
+      const hotelCols = [45, 45, 45, 33];
+      const hotelHeaders1 = ["Makkah Hotel", "Room Type", "Distance", "No. Of Nights"];
+      const hotelValues1 = [
+        safe(quote.makkah_hotel_name),
+        safe(quote.makkah_room_type),
+        safe(quote.makkah_distance),
+        safe(quote.makkah_nights),
+      ];
+
+      let hx = margin;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      hotelHeaders1.forEach((h, i) => {
+        doc.setFillColor(47, 117, 181);
+        doc.setTextColor(255, 255, 255);
+        doc.rect(hx, y, hotelCols[i], 9, "F");
+        doc.text(h, hx + hotelCols[i] / 2, y + 5.8, { align: "center" });
+        hx += hotelCols[i];
+      });
+
+      y += 9;
+      hx = margin;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      hotelValues1.forEach((v, i) => {
+        doc.setDrawColor(216, 224, 234);
+        doc.setFillColor(255, 255, 255);
+        doc.rect(hx, y, hotelCols[i], 11, "FD");
+        doc.setTextColor(15, 23, 42);
+        const lines = doc.splitTextToSize(String(v || "—"), hotelCols[i] - 4);
+        doc.text(lines, hx + 2, y + 4.8);
+        hx += hotelCols[i];
+      });
+
+      y += 16;
+
+      const hotelHeaders2 = ["Madinah Hotel", "Room Type", "Distance", "No. Of Nights"];
+      const hotelValues2 = [
+        safe(quote.madinah_hotel_name),
+        safe(quote.madinah_room_type),
+        safe(quote.madinah_distance),
+        safe(quote.madinah_nights),
+      ];
+
+      hx = margin;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      hotelHeaders2.forEach((h, i) => {
+        doc.setFillColor(47, 117, 181);
+        doc.setTextColor(255, 255, 255);
+        doc.rect(hx, y, hotelCols[i], 9, "F");
+        doc.text(h, hx + hotelCols[i] / 2, y + 5.8, { align: "center" });
+        hx += hotelCols[i];
+      });
+
+      y += 9;
+      hx = margin;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      hotelValues2.forEach((v, i) => {
+        doc.setDrawColor(216, 224, 234);
+        doc.setFillColor(255, 255, 255);
+        doc.rect(hx, y, hotelCols[i], 11, "FD");
+        doc.setTextColor(15, 23, 42);
+        const lines = doc.splitTextToSize(String(v || "—"), hotelCols[i] - 4);
+        doc.text(lines, hx + 2, y + 4.8);
+        hx += hotelCols[i];
+      });
+
+      y += 20;
+
+      // Price
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(17, 24, 39);
+      doc.text("Total Package includes Flights, Hotels and Visa:", margin, y);
+
+      y += 10;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Total Price:", margin, y);
+
+      const priceText = formatCurrency(quote.total_price);
+      const priceWidth = doc.getTextWidth(priceText) + 6;
+      doc.setFillColor(255, 242, 0);
+      doc.rect(margin + 30, y - 5, priceWidth, 7, "F");
+      doc.text(priceText, margin + 33, y);
+      doc.setFont("helvetica", "normal");
+      doc.text("including all.", margin + 33 + priceWidth, y);
+
+      y += 12;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(220, 38, 38);
+      wrapText(
+        doc,
+        `BOOK NOW & PAY LATER — Pay ${formatCurrency(
+          quote.deposit_amount
+        )} now, rest in easy instalments.`,
+        margin,
+        y,
+        contentWidth,
+        5
+      );
+
+      y += 14;
+
+      // Why
+      doc.setFont("times", "italic");
+      doc.setFontSize(12);
+      doc.setTextColor(0, 102, 204);
+      doc.text("Why you should book with Us:", margin, y);
+
+      y += 7;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(17, 24, 39);
+      wrapText(
+        doc,
+        "• Every trip is customized to match your preferences, budget, and travel style.",
+        margin + 5,
+        y,
+        contentWidth - 5,
+        5
+      );
+      y += 6;
+      wrapText(
+        doc,
+        "• Special rates and insider perks through trusted supplier relationships.",
+        margin + 5,
+        y,
+        contentWidth - 5,
+        5
+      );
+      y += 6;
+      wrapText(
+        doc,
+        "• Support before, during, and after your journey for a smooth Umrah experience.",
+        margin + 5,
+        y,
+        contentWidth - 5,
+        5
+      );
+
+      y += 12;
+
+      // Consultant + QR
+      const leftBoxW = 112;
+      const rightBoxW = contentWidth - leftBoxW - 6;
+
+      doc.setDrawColor(219, 228, 239);
+      doc.setFillColor(252, 252, 253);
+      doc.roundedRect(margin, y, leftBoxW, 34, 4, 4, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(17, 24, 39);
+      doc.text("Kind Regards,", margin + 6, y + 9);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(220, 38, 38);
+      doc.setFontSize(16);
+      doc.text(agentName, margin + 6, y + 18);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(17, 24, 39);
+      doc.setFontSize(11);
+      doc.text("Travel Consultant", margin + 6, y + 26);
+
+      doc.setDrawColor(219, 228, 239);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(margin + leftBoxW + 6, y, rightBoxW, 34, 4, 4, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("Scan to Contact on WhatsApp", margin + leftBoxW + 12, y + 8);
+
+      try {
+        await addImageFromUrl(doc, WHATSAPP_QR, "WEBP", margin + leftBoxW + 18, y + 10, 18, 18);
+      } catch {}
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      wrapText(
+        doc,
+        "Quick direct contact with MashaAllah Trips",
+        margin + leftBoxW + 42,
+        y + 18,
+        rightBoxW - 48,
+        4.5
+      );
+
+      y += 44;
+
+      // Trust logos bottom
+      try {
+        await addImageFromUrl(doc, TRUSTPILOT_LOGO, "WEBP", margin, y, 34, 10);
+      } catch {}
+      try {
+        await addImageFromUrl(doc, IATA_ATOL_LOGO, "WEBP", pageWidth - margin - 34, y - 1, 34, 12);
+      } catch {}
+
+      y += 18;
+
+      // Page 2
+      doc.addPage();
+      y = 16;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.setTextColor(15, 23, 42);
+      doc.text("Notes", margin, y);
+
+      y += 8;
+      doc.setDrawColor(219, 228, 239);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(margin, y, contentWidth, 44, 4, 4, "FD");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(17, 24, 39);
+      wrapText(doc, safe(quote.notes), margin + 5, y + 8, contentWidth - 10, 5);
+
+      y += 56;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text("Terms & Conditions", margin, y);
+
+      y += 8;
+      doc.setDrawColor(219, 228, 239);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(margin, y, contentWidth, 92, 4, 4, "FD");
+
+      const terms = [
+        "All quotations are subject to availability at the time of booking confirmation.",
+        "Prices may change until flights, hotels, transport and all services are fully confirmed.",
+        "Deposit payments may be non-refundable or partially refundable depending on supplier terms.",
+        "Visa approval is subject to the rules and final decision of the relevant authorities.",
+        "Flight timings, baggage allowance and routing may change as per airline operational updates.",
+        "Hotel distance, room type and star rating remain subject to final booking confirmation.",
+        "Full balance must be paid before travel as per agreed payment schedule.",
+        "Special requests are not guaranteed unless confirmed in final booking documents.",
+      ];
+
+      let ty = y + 10;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(17, 24, 39);
+
+      terms.forEach((term) => {
+        const lines = doc.splitTextToSize(`• ${term}`, contentWidth - 12);
+        doc.text(lines, margin + 6, ty);
+        ty += lines.length * 5 + 2;
+      });
+
+      doc.setDrawColor(219, 228, 239);
+      doc.line(margin, 282, pageWidth - margin, 282);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text("MashaAllah Trips", margin, 288);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text(
+        "+44 204 5557 373 • www.mashaallahtrips.com • 13 Station Rd, London SE25 5AH, UK",
+        pageWidth - margin,
+        288,
+        { align: "right" }
+      );
+
+      doc.save(`quotation-${safeFile(quote.booking_reference)}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert("Download PDF failed.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div style={uiStyles.loadingWrap}>
@@ -130,13 +653,17 @@ export default function QuotationPdfPage() {
             </Link>
           </div>
 
-          <button onClick={handlePrint} style={uiStyles.primaryBtn}>
-            Print / Save PDF
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button onClick={handlePrint} style={uiStyles.darkBtnBtn}>
+              Preview / Print
+            </button>
+            <button onClick={handleDownloadPdf} style={uiStyles.primaryBtn}>
+              {downloading ? "Downloading..." : "Download PDF"}
+            </button>
+          </div>
         </div>
 
-        <div className="pdf-sheet" style={sheetStyles.sheet}>
-          {/* Header */}
+        <div ref={pageRef} className="pdf-sheet" style={sheetStyles.sheet}>
           <div style={sheetStyles.header}>
             <div style={sheetStyles.headerTop}>
               <img src={BRAND_LOGO} alt="MashaAllah Trips" style={sheetStyles.brandLogo} />
@@ -161,7 +688,6 @@ export default function QuotationPdfPage() {
             </div>
           </div>
 
-          {/* Intro */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.metaLine}>
               <span>
@@ -179,7 +705,6 @@ export default function QuotationPdfPage() {
             </p>
           </div>
 
-          {/* Client */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.sectionHeading}>Client Details</div>
             <div style={sheetStyles.twoColGrid}>
@@ -204,7 +729,6 @@ export default function QuotationPdfPage() {
             </div>
           </div>
 
-          {/* Flight Details */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.sectionHeading}>Flights Details</div>
             <table style={sheetStyles.table}>
@@ -231,7 +755,6 @@ export default function QuotationPdfPage() {
             </table>
           </div>
 
-          {/* Hotels */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.sectionHeading}>Hotel Details</div>
 
@@ -274,31 +797,6 @@ export default function QuotationPdfPage() {
             </table>
           </div>
 
-          {/* Included + Pricing */}
-          <div style={sheetStyles.section}>
-            <div style={sheetStyles.twoColGrid}>
-              <InfoBox
-                title="Included Services"
-                rows={[
-                  ["Visa Included", yesNo(quote.visa_included)],
-                  ["Transport Included", yesNo(quote.transport_included)],
-                  ["Ziyarat Included", yesNo(quote.ziyarat_included)],
-                  ["Meals Included", yesNo(quote.meals_included)],
-                ]}
-              />
-              <InfoBox
-                title="Payment Summary"
-                rows={[
-                  ["Deposit Amount", formatCurrency(quote.deposit_amount)],
-                  ["Remaining Balance", formatCurrency(quote.remaining_balance)],
-                  ["Payment Plan", safe(quote.payment_plan)],
-                  ["Status", safe(quote.quotation_status)],
-                ]}
-              />
-            </div>
-          </div>
-
-          {/* Price highlight */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.packageInclude}>
               Total Package includes Flights, Hotels and Visa
@@ -309,11 +807,10 @@ export default function QuotationPdfPage() {
             </div>
 
             <div style={sheetStyles.offerText}>
-              BOOK NOW AND PAY LATER — pay {formatCurrency(quote.deposit_amount)} now and the rest in easy instalments.
+              BOOK NOW & PAY LATER — pay {formatCurrency(quote.deposit_amount)} now and the rest in easy instalments.
             </div>
           </div>
 
-          {/* Why choose */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.whyHeading}>Why you should book with Us:</div>
             <ul style={sheetStyles.bulletList}>
@@ -323,7 +820,6 @@ export default function QuotationPdfPage() {
             </ul>
           </div>
 
-          {/* Consultant + QR */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.bottomGrid}>
               <div style={sheetStyles.consultantCard}>
@@ -340,13 +836,11 @@ export default function QuotationPdfPage() {
             </div>
           </div>
 
-          {/* Notes */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.sectionHeading}>Notes</div>
             <div style={sheetStyles.notesBox}>{safe(quote.notes)}</div>
           </div>
 
-          {/* Terms */}
           <div style={sheetStyles.section}>
             <div style={sheetStyles.sectionHeading}>Terms & Conditions</div>
             <div style={sheetStyles.termsBox}>
@@ -363,7 +857,6 @@ export default function QuotationPdfPage() {
             </div>
           </div>
 
-          {/* Footer */}
           <div style={sheetStyles.footer}>
             <div style={sheetStyles.footerBrand}>MashaAllah Trips</div>
             <div style={sheetStyles.footerText}>
@@ -373,22 +866,6 @@ export default function QuotationPdfPage() {
         </div>
       </div>
     </>
-  );
-}
-
-function InfoBox({ title, rows }) {
-  return (
-    <div style={sheetStyles.infoCard}>
-      <div style={sheetStyles.infoCardTitle}>{title}</div>
-      <div style={sheetStyles.infoCardBody}>
-        {rows.map(([label, value]) => (
-          <div key={label} style={sheetStyles.infoRow}>
-            <div style={sheetStyles.infoLabel}>{label}</div>
-            <div style={sheetStyles.infoValue}>{value}</div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -426,6 +903,15 @@ const uiStyles = {
     textDecoration: "none",
     border: "1px solid rgba(255,255,255,0.10)",
     fontWeight: 700,
+  },
+  darkBtnBtn: {
+    padding: "12px 16px",
+    borderRadius: 12,
+    background: "rgba(255,255,255,0.08)",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.10)",
+    fontWeight: 700,
+    cursor: "pointer",
   },
   primaryBtn: {
     padding: "12px 18px",
@@ -738,17 +1224,18 @@ const sheetStyles = {
     marginTop: 24,
     padding: "20px 30px 26px",
     borderTop: "1px solid #dbe4ef",
-    textAlign: "center",
   },
   footerBrand: {
     fontSize: 18,
     fontWeight: 900,
     color: "#0f172a",
     marginBottom: 6,
+    textAlign: "center",
   },
   footerText: {
     fontSize: 13,
     color: "#475569",
+    textAlign: "center",
   },
 };
 
@@ -761,15 +1248,12 @@ const printStyles = `
   html, body {
     margin: 0;
     padding: 0;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   @media print {
-    body {
-      background: #ffffff !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
     .no-print {
       display: none !important;
     }
