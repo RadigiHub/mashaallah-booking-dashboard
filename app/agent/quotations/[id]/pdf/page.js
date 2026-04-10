@@ -6,13 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 
-const BRAND_LOGO =
+const BRAND_LOGO_URL =
   "https://mashaallahtrips.com/wp-content/uploads/2026/01/cropped-Mashaallah-6-scaled-1.webp";
-const TRUSTPILOT_LOGO =
+const TRUSTPILOT_LOGO_URL =
   "https://mashaallahtrips.com/wp-content/uploads/2026/04/Trustpilot-logo-Mashaallah-trips-.webp";
-const IATA_ATOL_LOGO =
+const IATA_ATOL_LOGO_URL =
   "https://mashaallahtrips.com/wp-content/uploads/2026/04/iata-atol-logo-mashaallah-trips-.webp";
-const WHATSAPP_QR =
+const WHATSAPP_QR_URL =
   "https://mashaallahtrips.com/wp-content/uploads/2026/04/wa.link_b7jw9k.webp";
 
 function safe(v) {
@@ -83,6 +83,21 @@ async function loadHtml2Canvas() {
   return window.html2canvas;
 }
 
+async function urlToDataUrl(url) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return url;
+  }
+}
+
 export default function QuotationPdfPage() {
   const params = useParams();
   const router = useRouter();
@@ -94,6 +109,27 @@ export default function QuotationPdfPage() {
   const [quote, setQuote] = useState(null);
   const [agentName, setAgentName] = useState("Travel Consultant");
   const [errorText, setErrorText] = useState("");
+
+  const [brandLogo, setBrandLogo] = useState(BRAND_LOGO_URL);
+  const [trustpilotLogo, setTrustpilotLogo] = useState(TRUSTPILOT_LOGO_URL);
+  const [iataLogo, setIataLogo] = useState(IATA_ATOL_LOGO_URL);
+  const [qrLogo, setQrLogo] = useState(WHATSAPP_QR_URL);
+
+  useEffect(() => {
+    async function loadAssets() {
+      const [b, t, i, q] = await Promise.all([
+        urlToDataUrl(BRAND_LOGO_URL),
+        urlToDataUrl(TRUSTPILOT_LOGO_URL),
+        urlToDataUrl(IATA_ATOL_LOGO_URL),
+        urlToDataUrl(WHATSAPP_QR_URL),
+      ]);
+      setBrandLogo(b);
+      setTrustpilotLogo(t);
+      setIataLogo(i);
+      setQrLogo(q);
+    }
+    loadAssets();
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -158,7 +194,8 @@ export default function QuotationPdfPage() {
         logging: false,
         scrollX: 0,
         scrollY: -window.scrollY,
-        windowWidth: document.documentElement.scrollWidth,
+        windowWidth: pageRef.current.scrollWidth,
+        windowHeight: pageRef.current.scrollHeight,
       });
 
       const imgData = canvas.toDataURL("image/png");
@@ -170,22 +207,24 @@ export default function QuotationPdfPage() {
       const printableWidth = pdfWidth - margin * 2;
       const printableHeight = pdfHeight - margin * 2;
 
-      const imgWidth = printableWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const canvasRatio = canvas.width / canvas.height;
+      const boxRatio = printableWidth / printableHeight;
 
-      let heightLeft = imgHeight;
-      let position = margin;
+      let finalWidth;
+      let finalHeight;
 
-      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, "", "FAST");
-      heightLeft -= printableHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + margin;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight, "", "FAST");
-        heightLeft -= printableHeight;
+      if (canvasRatio > boxRatio) {
+        finalWidth = printableWidth;
+        finalHeight = finalWidth / canvasRatio;
+      } else {
+        finalHeight = printableHeight;
+        finalWidth = finalHeight * canvasRatio;
       }
 
+      const x = (pdfWidth - finalWidth) / 2;
+      const y = (pdfHeight - finalHeight) / 2;
+
+      pdf.addImage(imgData, "PNG", x, y, finalWidth, finalHeight, "", "FAST");
       pdf.save(`quotation-${safeFile(quote?.booking_reference)}.pdf`);
     } catch (err) {
       console.error(err);
@@ -246,9 +285,8 @@ export default function QuotationPdfPage() {
           <div style={sheetStyles.header}>
             <div style={sheetStyles.headerTop}>
               <img
-                src={BRAND_LOGO}
+                src={brandLogo}
                 alt="MashaAllah Trips"
-                crossOrigin="anonymous"
                 style={sheetStyles.brandLogo}
               />
 
@@ -262,15 +300,13 @@ export default function QuotationPdfPage() {
 
             <div style={sheetStyles.trustRowTop}>
               <img
-                src={TRUSTPILOT_LOGO}
+                src={trustpilotLogo}
                 alt="Trustpilot"
-                crossOrigin="anonymous"
                 style={sheetStyles.trustpilotTop}
               />
               <img
-                src={IATA_ATOL_LOGO}
+                src={iataLogo}
                 alt="IATA ATOL"
-                crossOrigin="anonymous"
                 style={sheetStyles.iataTop}
               />
             </div>
@@ -353,7 +389,7 @@ export default function QuotationPdfPage() {
           <div style={sheetStyles.section}>
             <div style={sheetStyles.sectionHeading}>Hotel Details</div>
 
-            <table style={{ ...sheetStyles.table, marginBottom: 16 }}>
+            <table style={{ ...sheetStyles.table, marginBottom: 12 }}>
               <thead>
                 <tr>
                   <th style={sheetStyles.th}>Makkah Hotel</th>
@@ -426,9 +462,8 @@ export default function QuotationPdfPage() {
               <div style={sheetStyles.qrCard}>
                 <div style={sheetStyles.qrTitle}>Scan to Contact on WhatsApp</div>
                 <img
-                  src={WHATSAPP_QR}
+                  src={qrLogo}
                   alt="WhatsApp QR"
-                  crossOrigin="anonymous"
                   style={sheetStyles.qrImg}
                 />
                 <div style={sheetStyles.qrCaption}>Quick direct contact with MashaAllah Trips</div>
@@ -479,7 +514,7 @@ const uiStyles = {
     fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
   },
   toolbar: {
-    maxWidth: 1080,
+    maxWidth: 780,
     margin: "0 auto 18px",
     display: "flex",
     justifyContent: "space-between",
@@ -541,8 +576,8 @@ const uiStyles = {
 
 const sheetStyles = {
   sheet: {
-    width: "794px",
-    maxWidth: "794px",
+    width: "740px",
+    maxWidth: "740px",
     margin: "0 auto",
     background: "#ffffff",
     color: "#0f172a",
@@ -551,36 +586,36 @@ const sheetStyles = {
     overflow: "hidden",
   },
   header: {
-    padding: "22px 22px 0",
+    padding: "18px 20px 0",
   },
   headerTop: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: 16,
+    gap: 14,
     flexWrap: "wrap",
   },
   brandLogo: {
     width: "auto",
-    height: 54,
+    height: 48,
     objectFit: "contain",
   },
   headerRight: {
-    minWidth: 220,
+    minWidth: 200,
   },
   refBox: {
     border: "1px solid #dbe4ef",
     background: "#f8fbff",
-    borderRadius: 14,
-    padding: "12px 14px",
+    borderRadius: 12,
+    padding: "10px 12px",
   },
   refLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#64748b",
     marginBottom: 4,
   },
   refValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 800,
     color: "#0f172a",
   },
@@ -588,76 +623,76 @@ const sheetStyles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 16,
+    gap: 14,
     flexWrap: "wrap",
-    marginTop: 10,
-    paddingBottom: 10,
+    marginTop: 8,
+    paddingBottom: 8,
   },
   trustpilotTop: {
-    height: 24,
+    height: 20,
     width: "auto",
     objectFit: "contain",
   },
   iataTop: {
-    height: 28,
+    height: 24,
     width: "auto",
     objectFit: "contain",
   },
   royalBand: {
     textAlign: "center",
-    padding: "16px 16px 18px",
+    padding: "14px 12px 15px",
     borderTop: "2px solid #0b4772",
     borderBottom: "2px solid #0b4772",
     background: "linear-gradient(90deg,#f7fbff,#fff8fc)",
   },
   proposalTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 900,
     color: "#0b4772",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   proposalSub: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#475569",
   },
   section: {
-    padding: "18px 22px 0",
+    padding: "14px 20px 0",
   },
   metaLine: {
     display: "flex",
     justifyContent: "space-between",
     gap: 12,
     flexWrap: "wrap",
-    fontSize: 13,
+    fontSize: 12,
     color: "#334155",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   para: {
-    margin: "0 0 10px",
+    margin: "0 0 8px",
     color: "#334155",
-    lineHeight: 1.5,
-    fontSize: 13,
+    lineHeight: 1.45,
+    fontSize: 12,
   },
   sectionHeading: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: 800,
     color: "#0f172a",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   twoColGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 16,
+    gap: 12,
   },
   bottomGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 250px",
-    gap: 16,
+    gridTemplateColumns: "1fr 210px",
+    gap: 12,
     alignItems: "stretch",
   },
   infoCard: {
     border: "1px solid #dbe4ef",
-    borderRadius: 14,
+    borderRadius: 12,
     background: "#ffffff",
     overflow: "hidden",
   },
@@ -665,24 +700,24 @@ const sheetStyles = {
     background: "#0b4772",
     color: "#fff",
     fontWeight: 700,
-    padding: "10px 14px",
-    fontSize: 13,
+    padding: "8px 12px",
+    fontSize: 12,
   },
   infoCardBody: {
-    padding: "8px 14px",
+    padding: "6px 12px",
   },
   infoRow: {
     display: "grid",
-    gap: 4,
-    padding: "8px 0",
+    gap: 3,
+    padding: "6px 0",
     borderBottom: "1px solid #eef2f7",
   },
   infoLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#64748b",
   },
   infoValue: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#0f172a",
     fontWeight: 600,
     whiteSpace: "pre-wrap",
@@ -692,37 +727,36 @@ const sheetStyles = {
     width: "100%",
     borderCollapse: "collapse",
     border: "1px solid #d8e0ea",
-    marginBottom: 0,
     tableLayout: "fixed",
   },
   th: {
     background: "#0b4772",
     color: "#fff",
     fontWeight: 700,
-    fontSize: 12,
-    padding: "8px 6px",
+    fontSize: 11,
+    padding: "7px 5px",
     border: "1px solid #0b4772",
     textAlign: "center",
   },
   td: {
     border: "1px solid #d8e0ea",
-    padding: "8px 6px",
-    fontSize: 12,
+    padding: "7px 5px",
+    fontSize: 11,
     color: "#0f172a",
     verticalAlign: "top",
     wordBreak: "break-word",
   },
   packageInclude: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 800,
     color: "#111827",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   priceHighlight: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 700,
     color: "#111827",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   priceChip: {
     background: "#fff176",
@@ -731,111 +765,111 @@ const sheetStyles = {
     borderRadius: 4,
   },
   offerText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 800,
     color: "#dc2626",
-    lineHeight: 1.5,
+    lineHeight: 1.45,
   },
   whyHeading: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 800,
     color: "#0b4772",
     fontStyle: "italic",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   bulletList: {
     margin: 0,
-    paddingLeft: 20,
-    lineHeight: 1.7,
+    paddingLeft: 18,
+    lineHeight: 1.6,
     color: "#111827",
-    fontSize: 13,
+    fontSize: 12,
   },
   consultantCard: {
     border: "1px solid #dbe4ef",
-    borderRadius: 14,
+    borderRadius: 12,
     background: "#fcfcfd",
-    padding: 16,
+    padding: 12,
   },
   consultantLabel: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: 700,
-    marginBottom: 8,
+    marginBottom: 6,
     color: "#111827",
   },
   consultantName: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 900,
     color: "#dc2626",
     marginBottom: 4,
   },
   consultantRole: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 700,
     color: "#111827",
   },
   qrCard: {
     border: "1px solid #dbe4ef",
-    borderRadius: 14,
+    borderRadius: 12,
     background: "#ffffff",
-    padding: 16,
+    padding: 12,
     textAlign: "center",
   },
   qrTitle: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 800,
     color: "#0f172a",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   qrImg: {
-    width: 120,
-    height: 120,
+    width: 96,
+    height: 96,
     objectFit: "contain",
     display: "block",
     margin: "0 auto 8px",
   },
   qrCaption: {
-    fontSize: 12,
+    fontSize: 10,
     color: "#475569",
-    lineHeight: 1.4,
+    lineHeight: 1.35,
   },
   notesBox: {
     border: "1px solid #dbe4ef",
-    borderRadius: 14,
+    borderRadius: 12,
     background: "#ffffff",
-    padding: 14,
-    fontSize: 12,
-    lineHeight: 1.6,
+    padding: 12,
+    fontSize: 11,
+    lineHeight: 1.5,
     color: "#111827",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
   },
   termsBox: {
     border: "1px solid #dbe4ef",
-    borderRadius: 14,
+    borderRadius: 12,
     background: "#ffffff",
-    padding: 14,
+    padding: 12,
   },
   termList: {
     margin: 0,
-    paddingLeft: 20,
-    lineHeight: 1.7,
+    paddingLeft: 18,
+    lineHeight: 1.55,
     color: "#111827",
-    fontSize: 12,
+    fontSize: 11,
   },
   footer: {
-    marginTop: 20,
-    padding: "18px 22px 22px",
+    marginTop: 16,
+    padding: "14px 20px 18px",
     borderTop: "1px solid #dbe4ef",
   },
   footerBrand: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 900,
     color: "#0f172a",
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: "center",
   },
   footerText: {
-    fontSize: 12,
+    fontSize: 10,
     color: "#475569",
     textAlign: "center",
   },
@@ -843,7 +877,7 @@ const sheetStyles = {
 
 const printStyles = `
   @page {
-    size: A4;
+    size: A4 portrait;
     margin: 8mm;
   }
 
